@@ -50,29 +50,64 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                             fields = list(name = "character", data = "data.frame",
                                           strains_names = "list",
                                           strains_plate_cols = "list",
-                                          strains_plate_row_start = "list", 
+                                          strains_plate_rows = "list", 
                                           replicates = "numeric",
                                           blank = "logical",
                                           growthCurveObjects = "list"),
                             methods = list(
                               
+                              initialize = function(name = character(), data = data.frame(),
+                                                    strains_names = list(),
+                                                    strains_plate_cols = list(),
+                                                    strains_plate_rows = list(), 
+                                                    blank = logical()
+                              ){
+                                .self$strains_plate_rows <- strains_plate_rows
+                                .self$replicates = length(.self$strains_plate_rows)
+                              },
+                              
+                              get_strains_stats_df = function(){
+                                # Empty dfs for means and sds, first colum is "Time" variable.
+                                for (strain in strains_names) {
+                                  print(strain)
+                                  # Get wells list for each strain
+                                  
+                                  # Create dataframe by selecting the wells from the df
+                                  
+                                  # Calculate the stats for the strain df.
+                                  
+                                  # Append to each stats df
+                                }
+                              }
+                                
                             )
-                            )
+)
 
+Growthcurve.group3 <- read.csv2("C:/Users/Marcelo/OneDrive - UT Cloud/Postdoc Tü/Sci/NoseSynComProject/6_Growth curves/Growthcurve group3 repeats.csv")
 
-# 
+#
 experiment1 <- GrowthCurveExperiment(name = "exp1", data = Growthcurve.group3,
                                      strains_names = list("R. mucilaginosa", "C. tuberculosteariscum",
                                                           "C. kroppenstedtii", "C. propinquum",
                                                           "C. accolens"),
                                      strains_plate_cols = list(4,5,6,7,8),
-                                     strains_row_cols = list("A:H"),
+                                     strains_plate_rows = list("A", "B", "C", "D", "E", "F", "G", "H"),
                                      blank = FALSE
                                      )
 
 # experiment1
-experiment1
+experiment1$replicates
 
+experiment1$get_strains_stats_df()
+
+strains_plate_cols = list(4,5,6,7,8)
+strains_plate_rows = list("A", "B", "C", "D", "E", "F", "G", "H")
+
+for (colstr in strains_plate_cols) {
+  for (rowstr in strains_plate_rows) {
+    print(paste(rowstr, colstr, sep = ""))
+  }
+}
 
 
 #strain_plate_cols = "list", strain_plate_rows = "list"
