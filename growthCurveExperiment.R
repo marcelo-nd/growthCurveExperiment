@@ -64,13 +64,25 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               ){
                                 .self$strains_plate_rows <- strains_plate_rows
                                 .self$replicates = length(.self$strains_plate_rows)
+                                
+                                # Get wells list for each strain
+                                for (colstr in strains_plate_cols) {
+                                  strain_wells <- list()
+                                  for (rowstr in strains_plate_rows) {
+                                    print(paste(rowstr, colstr, sep = ""))
+                                    strain_wells <- append(strain_wells, paste(rowstr, colstr, sep = ""))
+                                  }
+                                  print(strain_wells)
+                                }
+                                # generate and add the growth curve object to list
                               },
                               
                               get_strains_stats_df = function(){
-                                # Empty dfs for means and sds, first colum is "Time" variable.
-                                for (strain in strains_names) {
-                                  print(strain)
-                                  # Get wells list for each strain
+                                # Empty dfs for means and sds, first column is "Time" variable.
+                                od_means <- dplyr::select(.self$data, "Time")
+                                od_sds <- dplyr::select(.self$data, "Time")
+                                for (gco in growthCurveObjects) {
+                                  print(gco$name)
                                   
                                   # Create dataframe by selecting the wells from the df
                                   
@@ -103,11 +115,7 @@ experiment1$get_strains_stats_df()
 strains_plate_cols = list(4,5,6,7,8)
 strains_plate_rows = list("A", "B", "C", "D", "E", "F", "G", "H")
 
-for (colstr in strains_plate_cols) {
-  for (rowstr in strains_plate_rows) {
-    print(paste(rowstr, colstr, sep = ""))
-  }
-}
+
 
 
 #strain_plate_cols = "list", strain_plate_rows = "list"
