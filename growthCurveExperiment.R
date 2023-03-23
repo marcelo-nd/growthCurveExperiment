@@ -1,5 +1,6 @@
 GrowthCurve <- setRefClass("GrowthCurve",
-                           fields = list(name = "character", data = "data.frame"),
+                           fields = list(name = "character", data = "data.frame",
+                                         data_stats = "list", means = "data.frame", sds = "data.frame"),
                            
                            methods = list(
                              initialize = function(name = character(), data = data.frame(),
@@ -7,6 +8,11 @@ GrowthCurve <- setRefClass("GrowthCurve",
                                .self$name <- name
                                .self$data <- as.data.frame(data)
                                #.self$data$Time <- lapply(.self$data$Time, .self$parse_time_in_hours)
+                               
+                               # Calculate stats
+                               .self$data_stats <- .self$calculate_stats()
+                               .self$means <- .self$data_stats[[1]]
+                               .self$sds <- .self$data_stats[[2]]
                                },
                              parse_time_in_hours = function(time_string){
                                time_split <- strsplit(time_string, split = ":")
@@ -41,9 +47,8 @@ gc2 <- GrowthCurve$new(name="test_name", data  = Growthcurve.group3)
 
 gc2$parse_time_column()
 
-gc2$data
-
-gc2$calculate_stats()
+gc2$means
+gc2$sds
 
 # create a class "GrowthCurveExperiment"
 GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
@@ -53,7 +58,9 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                           strains_plate_rows = "list", 
                                           replicates = "numeric",
                                           blank = "logical",
-                                          growthCurveObjects = "list"),
+                                          growthCurveObjects = "list",
+                                          od_means = "data.frame",
+                                          od_sds = "data.frame"),
                             methods = list(
                               initialize = function(name = character(), data = data.frame(),
                                                     strains_names = list(),
@@ -64,6 +71,8 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 # Set all fields with the values passed in the constructor
                                 .self$strains_plate_rows <- strains_plate_rows
                                 .self$data <- as.data.frame(data)
+                                .self$od_means <- data.frame()
+                                .self$od_sds <- data.frame()
                                 
                                 # Get number of replicates
                                 .self$replicates = length(.self$strains_plate_rows)
@@ -105,17 +114,32 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               },
                               get_strains_stats_df = function(){
                                 # Empty dfs for means and sds, first column is "Time" variable.
-                                od_means <- dplyr::select(.self$data, "Time")
-                                od_sds <- dplyr::select(.self$data, "Time")
+                                .self$od_means <- dplyr::select(.self$data, "Time")
+                                .self$od_sds <- dplyr::select(.self$data, "Time")
                                 for (gco in growthCurveObjects) {
                                   print(gco$name)
-                                  
-                                  # Create dataframe by selecting the wells from the data
-                                  
-                                  # Calculate the stats for the strain df.
-                                  
-                                  # Append to each stats df
+                                  # Calculate the stats for each strain in GrowthCurve objects list
+                                  # and append to each stats df
+                                  gco_means <- dplyr::select(gco$means, "mean")
+                                  colnames(gco_means) <- gco$name
+                                  od_means <<- cbind(od_means, gco_means)
+
+                                  gco_sds <- dplyr::select(gco$sds, "sd")
+                                  colnames(gco_sds) <- gco$name
+                                  od_sds <<- cbind(od_sds, gco_sds)
                                 }
+                              },
+                              add_gco(gco_to_add){
+                                gco_means <- dplyr::select(gco_to_add$means, "mean")
+                                colnames(gco_means) <- gco_to_add$name
+                                od_means <<- cbind(od_means, gco_means)
+                                
+                                gco_sds <- dplyr::select(gco_to_add$sds, "sd")
+                                colnames(gco_sds) <- gco_to_add$name
+                                od_sds <<- cbind(od_sds, gco_sds)
+                              },
+                              remove_gco{
+                                
                               }
                             )
 )
@@ -131,8 +155,12 @@ experiment1 <- GrowthCurveExperiment(name = "exp1", data = Growthcurve.group3,
                                      strains_plate_rows = list("A", "B", "C", "D", "E", "F", "G", "H"),
                                      blank = FALSE
                                      )
-experiment1$growthCurveObjects
 
+experiment1$get_strains_stats_df()
+
+head(experiment1$od_means)
+
+head(experiment1$od_sds)
 
 # experiment1
 experiment1$replicates
