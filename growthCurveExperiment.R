@@ -139,9 +139,26 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               },
                               merge_experiments = function(gco_to_remove){
                                 #toDo
-                              }
+                              },
                               plot_curves = function(){
+                                #print(length(.self$strains_names[[1]]))
+                                od_g <- tidyr::gather(.self$od_means, key = "Species", value = "OD", 2:(length(.self$strains_names[[1]]) + 1))
+                                print(od_g, 20)
+                                od_sds_g <- tidyr::gather(.self$od_sds, key = "Species", value = "SD", 2:(length(.self$strains_names[[1]]) + 1))
+                                #print(head(od_sds_g))
                                 
+                                od_means_sds_preds <- cbind(od_g, od_sds_g$SD)
+                                
+                                colnames(od_means_sds_preds) <- c("Time", "Species", "od", "sd")
+                                
+                                color_scale = c("#AD7BE9", "#3E54AC", "#658864", "#6D9886", "#E96479", "#E69F00", "#FC7300",  "#183A1D", "#635985", "#F99417", "#FEA1BF", "#5BC0F8", "#DC0000", "#495579")
+                                
+                                curves_plot <- od_means_sds_preds %>%
+                                  ggplot(aes(x = Time, y = od, group = Species, color = Species)) +
+                                  geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
+                                  geom_point(alpha=0.7) +
+                                  scale_color_manual(values=color_scale)
+                                curves_plot
                               }
                             )
 )
