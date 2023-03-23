@@ -55,28 +55,54 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                           blank = "logical",
                                           growthCurveObjects = "list"),
                             methods = list(
-                              
                               initialize = function(name = character(), data = data.frame(),
                                                     strains_names = list(),
                                                     strains_plate_cols = list(),
-                                                    strains_plate_rows = list(), 
+                                                    strains_plate_rows = list(),
                                                     blank = logical()
                               ){
+                                # Set all fields with the values passed in the constructor
                                 .self$strains_plate_rows <- strains_plate_rows
+                                .self$data <- as.data.frame(data)
+                                
+                                # Get number of replicates
                                 .self$replicates = length(.self$strains_plate_rows)
                                 
+                                # Parse time column in the data DF.
+                                .self$parse_time_column()
+                                
+                                #print(head(.self$data))
+                                
+                                # Create list of GrowthCurve Objects.
                                 # Get wells list for each strain
+                                bacteria_count = 1
                                 for (colstr in strains_plate_cols) {
-                                  strain_wells <- list()
+                                  #strain_wells <- list()
+                                  strain_wells <- c()
                                   for (rowstr in strains_plate_rows) {
-                                    print(paste(rowstr, colstr, sep = ""))
-                                    strain_wells <- append(strain_wells, paste(rowstr, colstr, sep = ""))
+                                    #print(paste(rowstr, colstr, sep = ""))
+                                    #strain_wells <- append(strain_wells, paste(rowstr, colstr, sep = ""))
+                                    strain_wells <- c(strain_wells, paste(rowstr, colstr, sep = ""))
                                   }
-                                  print(strain_wells)
+                                  #print(strain_wells)
+                                  #print(head(select(.self$data, all_of(c("Time", strain_wells)))))
+                                  
+                                  # generate and add the growth curve object to list
+                                  #print(strains_names[[bacteria_count]])
+                                  growthCurveObjects <<- append(growthCurveObjects, GrowthCurve$new(name=strains_names[[bacteria_count]], data  = select(.self$data, all_of(c("Time", strain_wells)))))
+                                  
+                                  bacteria_count = bacteria_count + 1
                                 }
-                                # generate and add the growth curve object to list
                               },
-                              
+                              parse_time_in_hours = function(time_string){
+                                time_split <- strsplit(time_string, split = ":")
+                                hours <- as.numeric(time_split[[1]][1])
+                                mins <- as.numeric(time_split[[1]][2]) + (as.numeric(time_split[[1]][3])/60)
+                                return(hours + (mins/60))
+                              },
+                              parse_time_column = function(){
+                                .self$data$Time <- lapply(.self$data$Time, .self$parse_time_in_hours)
+                              },
                               get_strains_stats_df = function(){
                                 # Empty dfs for means and sds, first column is "Time" variable.
                                 od_means <- dplyr::select(.self$data, "Time")
@@ -84,14 +110,13 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 for (gco in growthCurveObjects) {
                                   print(gco$name)
                                   
-                                  # Create dataframe by selecting the wells from the df
+                                  # Create dataframe by selecting the wells from the data
                                   
                                   # Calculate the stats for the strain df.
                                   
                                   # Append to each stats df
                                 }
                               }
-                                
                             )
 )
 
@@ -106,6 +131,8 @@ experiment1 <- GrowthCurveExperiment(name = "exp1", data = Growthcurve.group3,
                                      strains_plate_rows = list("A", "B", "C", "D", "E", "F", "G", "H"),
                                      blank = FALSE
                                      )
+experiment1$growthCurveObjects
+
 
 # experiment1
 experiment1$replicates
