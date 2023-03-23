@@ -1,3 +1,4 @@
+# Class "GrowthCurve"
 GrowthCurve <- setRefClass("GrowthCurve",
                            fields = list(name = "character", data = "data.frame",
                                          data_stats = "list", means = "data.frame", sds = "data.frame"),
@@ -40,17 +41,7 @@ GrowthCurve <- setRefClass("GrowthCurve",
                            )
 )
 
-
-Growthcurve.group3 <- read.csv2("C:/Users/Marcelo/OneDrive - UT Cloud/Postdoc Tü/Sci/NoseSynComProject/6_Growth curves/Growthcurve group3 repeats.csv")
-
-gc2 <- GrowthCurve$new(name="test_name", data  = Growthcurve.group3)
-
-gc2$parse_time_column()
-
-gc2$means
-gc2$sds
-
-# create a class "GrowthCurveExperiment"
+# Class "GrowthCurveExperiment"
 GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                             fields = list(name = "character", data = "data.frame",
                                           strains_names = "list",
@@ -60,26 +51,31 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                           blank = "logical",
                                           growthCurveObjects = "list",
                                           od_means = "data.frame",
-                                          od_sds = "data.frame"),
+                                          od_sds = "data.frame",
+                                          parseTime = "logical"),
                             methods = list(
                               initialize = function(name = character(), data = data.frame(),
                                                     strains_names = list(),
                                                     strains_plate_cols = list(),
                                                     strains_plate_rows = list(),
-                                                    blank = logical()
+                                                    blank = logical(),
+                                                    parseTime = logical()
                               ){
                                 # Set all fields with the values passed in the constructor
                                 .self$strains_plate_rows <- strains_plate_rows
                                 .self$data <- as.data.frame(data)
                                 .self$od_means <- data.frame()
                                 .self$od_sds <- data.frame()
+                                .self$strains_names <- as.list(strains_names)
+                                .self$parseTime <- parseTime
                                 
                                 # Get number of replicates
                                 .self$replicates = length(.self$strains_plate_rows)
                                 
                                 # Parse time column in the data DF.
-                                .self$parse_time_column()
-                                
+                                if (parseTime) {
+                                  .self$parse_time_column()
+                                }
                                 #print(head(.self$data))
                                 
                                 # Create list of GrowthCurve Objects.
@@ -93,13 +89,9 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                     #strain_wells <- append(strain_wells, paste(rowstr, colstr, sep = ""))
                                     strain_wells <- c(strain_wells, paste(rowstr, colstr, sep = ""))
                                   }
-                                  #print(strain_wells)
-                                  #print(head(select(.self$data, all_of(c("Time", strain_wells)))))
-                                  
                                   # generate and add the growth curve object to list
                                   #print(strains_names[[bacteria_count]])
-                                  growthCurveObjects <<- append(growthCurveObjects, GrowthCurve$new(name=strains_names[[bacteria_count]], data  = select(.self$data, all_of(c("Time", strain_wells)))))
-                                  
+                                  growthCurveObjects <<- append(growthCurveObjects, GrowthCurve$new(name=strains_names[[1]][bacteria_count], data  = select(.self$data, all_of(c("Time", strain_wells)))))
                                   bacteria_count = bacteria_count + 1
                                 }
                               },
@@ -129,7 +121,9 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   od_sds <<- cbind(od_sds, gco_sds)
                                 }
                               },
-                              add_gco(gco_to_add){
+                              add_gco = function(gco_to_add){
+                                strains_names <<- append(strains_names, gco_to_add$name)
+                                
                                 gco_means <- dplyr::select(gco_to_add$means, "mean")
                                 colnames(gco_means) <- gco_to_add$name
                                 od_means <<- cbind(od_means, gco_means)
@@ -138,41 +132,16 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 colnames(gco_sds) <- gco_to_add$name
                                 od_sds <<- cbind(od_sds, gco_sds)
                               },
-                              remove_gco{
+                              remove_gco = function(gco_to_remove){
+                                od_means <<- dplyr::select(.self$od_means, -any_of(c(gco_to_remove)))
+                                od_sds <<- dplyr::select(.self$od_sds, -any_of(c(gco_to_remove)))
+                                strains_names <<- strains_names[strains_names != gco_to_remove]
+                              },
+                              merge_experiments = function(gco_to_remove){
+                                #toDo
+                              }
+                              plot_curves = function(){
                                 
                               }
                             )
 )
-
-Growthcurve.group3 <- read.csv2("C:/Users/Marcelo/OneDrive - UT Cloud/Postdoc Tü/Sci/NoseSynComProject/6_Growth curves/Growthcurve group3 repeats.csv")
-
-#
-experiment1 <- GrowthCurveExperiment(name = "exp1", data = Growthcurve.group3,
-                                     strains_names = list("R. mucilaginosa", "C. tuberculosteariscum",
-                                                          "C. kroppenstedtii", "C. propinquum",
-                                                          "C. accolens"),
-                                     strains_plate_cols = list(4,5,6,7,8),
-                                     strains_plate_rows = list("A", "B", "C", "D", "E", "F", "G", "H"),
-                                     blank = FALSE
-                                     )
-
-experiment1$get_strains_stats_df()
-
-head(experiment1$od_means)
-
-head(experiment1$od_sds)
-
-# experiment1
-experiment1$replicates
-
-experiment1$get_strains_stats_df()
-
-strains_plate_cols = list(4,5,6,7,8)
-strains_plate_rows = list("A", "B", "C", "D", "E", "F", "G", "H")
-
-
-
-
-#strain_plate_cols = "list", strain_plate_rows = "list"
-#.self$strain_plate_cols  <- as.list(strain_plate_cols)
-#.self$strain_plate_rows  <- as.list(strain_plate_rows)
