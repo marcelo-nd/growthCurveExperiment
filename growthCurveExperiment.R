@@ -54,13 +54,16 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                           od_sds = "data.frame",
                                           parseTime = "logical"),
                             methods = list(
-                              initialize = function(name = character(), data = data.frame(),
-                                                    strains_names = list(),
-                                                    strains_plate_cols = list(),
-                                                    strains_plate_rows = list(),
-                                                    blank = logical(),
-                                                    parseTime = logical()
+                              initialize = function(name = character()
                               ){
+                                .self$name <- name
+                              },
+                              create_gc_objects_from_table1 = function(data = data.frame(),
+                                                                       strains_names = list(),
+                                                                       strains_plate_cols = list(),
+                                                                       strains_plate_rows = list(),
+                                                                       blank = logical(),
+                                                                       parseTime = logical()){
                                 # Set all fields with the values passed in the constructor
                                 .self$strains_plate_rows <- strains_plate_rows
                                 .self$data <- as.data.frame(data)
@@ -73,7 +76,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 .self$replicates = length(.self$strains_plate_rows)
                                 
                                 # Parse time column in the data DF.
-                                if (parseTime) {
+                                if (.self$parseTime) {
                                   .self$parse_time_column()
                                 }
                                 #print(head(.self$data))
@@ -102,7 +105,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 return(hours + (mins/60))
                               },
                               parse_time_column = function(){
-                                .self$data$Time <- lapply(.self$data$Time, .self$parse_time_in_hours)
+                                .self$data$Time <- as.double(lapply(.self$data$Time, .self$parse_time_in_hours))
                               },
                               get_strains_stats_df = function(){
                                 # Empty dfs for means and sds, first column is "Time" variable.
@@ -135,7 +138,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               remove_gco = function(gco_to_remove){
                                 od_means <<- dplyr::select(.self$od_means, -any_of(c(gco_to_remove)))
                                 od_sds <<- dplyr::select(.self$od_sds, -any_of(c(gco_to_remove)))
-                                strains_names <<- strains_names[strains_names != gco_to_remove]
+                                .self$strains_names[[1]] <- .self$strains_names[[1]][.self$strains_names[[1]] != gco_to_remove]
                               },
                               merge_experiments = function(gco_to_remove){
                                 #toDo
@@ -145,7 +148,6 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 od_g <- tidyr::gather(.self$od_means, key = "Species", value = "OD", 2:(length(.self$strains_names[[1]]) + 1))
                                 print(od_g, 20)
                                 od_sds_g <- tidyr::gather(.self$od_sds, key = "Species", value = "SD", 2:(length(.self$strains_names[[1]]) + 1))
-                                #print(head(od_sds_g))
                                 
                                 od_means_sds_preds <- cbind(od_g, od_sds_g$SD)
                                 
