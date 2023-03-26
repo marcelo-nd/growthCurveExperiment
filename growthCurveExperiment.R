@@ -11,9 +11,10 @@ GrowthCurve <- setRefClass("GrowthCurve",
                                #.self$data$Time <- lapply(.self$data$Time, .self$parse_time_in_hours)
                                
                                # Calculate stats
-                               .self$data_stats <- .self$calculate_stats()
-                               .self$means <- .self$data_stats[[1]]
-                               .self$sds <- .self$data_stats[[2]]
+                               #.self$data_stats <- .self$calculate_stats()
+                               #.self$means <- .self$data_stats[[1]]
+                               #.self$sds <- .self$data_stats[[2]]
+                               .self$calculate_stats()
                                },
                              parse_time_in_hours = function(time_string){
                                time_split <- strsplit(time_string, split = ":")
@@ -30,13 +31,13 @@ GrowthCurve <- setRefClass("GrowthCurve",
                                  return(apply(x, MARGIN = 1, FUN = sd))
                                }
                                
-                               od_means <- dplyr::select(.self$data, "Time")
-                               od_sds <- dplyr::select(.self$data, "Time")
-                               od_means <- cbind(od_means, data.frame(rowMeans(.self$data[2:ncol(.self$data)])))
-                               od_sds <- cbind(od_sds, data.frame(rowSDs(.self$data[2:ncol(.self$data)])))
-                               colnames(od_means) <- c("Time", "mean")
-                               colnames(od_sds) <- c("Time", "sd")
-                               return(list(od_means, od_sds))
+                               .self$means <- dplyr::select(.self$data, "Time")
+                               .self$sds <- dplyr::select(.self$data, "Time")
+                               .self$means <- cbind(.self$means, data.frame(rowMeans(.self$data[2:ncol(.self$data)])))
+                               .self$sds <- cbind(.self$sds, data.frame(rowSDs(.self$data[2:ncol(.self$data)])))
+                               colnames(.self$means) <- c("Time", "mean")
+                               colnames(.self$sds) <- c("Time", "sd")
+                               #return(list(.self$means, .self$sds))
                              }
                            )
 )
@@ -66,7 +67,8 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                                                        parseTime = logical()){
                                 # Set all fields with the values passed in the constructor
                                 .self$strains_plate_rows <- strains_plate_rows
-                                .self$data <- as.data.frame(data)
+                                .self$data <- data
+                                #print(head(.self$data))
                                 .self$od_means <- data.frame()
                                 .self$od_sds <- data.frame()
                                 .self$strains_names <- as.list(strains_names)
@@ -94,6 +96,9 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   }
                                   # generate and add the growth curve object to list
                                   #print(strains_names[[bacteria_count]])
+                                  #print(strain_wells)
+                                  #print(c("Time", strain_wells))
+                                  #print(head(.self$data))
                                   growthCurveObjects <<- append(growthCurveObjects, GrowthCurve$new(name=strains_names[[1]][bacteria_count], data  = select(.self$data, all_of(c("Time", strain_wells)))))
                                   bacteria_count = bacteria_count + 1
                                 }
@@ -125,14 +130,14 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 }
                               },
                               add_gco = function(gco_to_add){
-                                strains_names <<- append(strains_names, gco_to_add$name)
+                                .self$strains_names[[1]] <-c(.self$strains_names[[1]], gco_to_add[[1]]$name)
                                 
-                                gco_means <- dplyr::select(gco_to_add$means, "mean")
-                                colnames(gco_means) <- gco_to_add$name
+                                gco_means <- dplyr::select(gco_to_add[[1]]$means, "mean")
+                                colnames(gco_means) <- gco_to_add[[1]]$name
                                 od_means <<- cbind(od_means, gco_means)
                                 
-                                gco_sds <- dplyr::select(gco_to_add$sds, "sd")
-                                colnames(gco_sds) <- gco_to_add$name
+                                gco_sds <- dplyr::select(gco_to_add[[1]]$sds, "sd")
+                                colnames(gco_sds) <- gco_to_add[[1]]$name
                                 od_sds <<- cbind(od_sds, gco_sds)
                               },
                               remove_gco = function(gco_to_remove){
@@ -143,7 +148,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               merge_experiments = function(gco_to_remove){
                                 #toDo
                               },
-                              plot_curves = function(){
+                              plot_curves = function(yScalemin = 0, yScalemax = 1){
                                 #print(length(.self$strains_names[[1]]))
                                 od_g <- tidyr::gather(.self$od_means, key = "Species", value = "OD", 2:(length(.self$strains_names[[1]]) + 1))
                                 print(od_g, 20)
@@ -159,7 +164,8 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   ggplot(aes(x = Time, y = od, group = Species, color = Species)) +
                                   geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
                                   geom_point(alpha=0.7) +
-                                  scale_color_manual(values=color_scale)
+                                  scale_color_manual(values=color_scale) +
+                                  ylim(yScalemin, yScalemax)
                                 curves_plot
                               }
                             )
