@@ -99,7 +99,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   #print(strain_wells)
                                   #print(c("Time", strain_wells))
                                   #print(head(.self$data))
-                                  growthCurveObjects <<- append(growthCurveObjects, GrowthCurve$new(name=strains_names[[1]][bacteria_count], data  = select(.self$data, all_of(c("Time", strain_wells)))))
+                                  growthCurveObjects <<- append(growthCurveObjects, GrowthCurve$new(name=strains_names[[1]][bacteria_count], data  = dplyr::select(.self$data, all_of(c("Time", strain_wells)))))
                                   bacteria_count = bacteria_count + 1
                                 }
                               },
@@ -132,13 +132,17 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               add_gco = function(gco_to_add){
                                 .self$strains_names[[1]] <-c(.self$strains_names[[1]], gco_to_add[[1]]$name)
                                 
-                                gco_means <- dplyr::select(gco_to_add[[1]]$means, "mean")
-                                colnames(gco_means) <- gco_to_add[[1]]$name
-                                od_means <<- cbind(od_means, gco_means)
+                                #gco_means <- dplyr::select(gco_to_add[[1]]$means, "mean")
+                                gco_means <- gco_to_add[[1]]$means
+                                colnames(gco_means) <- c("Time", gco_to_add[[1]]$name)
+                                #od_means <<- cbind(od_means, gco_means)
+                                od_means <<- merge(od_means, gco_means, all = T, by="Time")
                                 
-                                gco_sds <- dplyr::select(gco_to_add[[1]]$sds, "sd")
-                                colnames(gco_sds) <- gco_to_add[[1]]$name
-                                od_sds <<- cbind(od_sds, gco_sds)
+                                #gco_sds <- dplyr::select(gco_to_add[[1]]$sds, "sd")
+                                gco_sds <- gco_to_add[[1]]$sds
+                                colnames(gco_sds) <- c("Time", gco_to_add[[1]]$name)
+                                #od_sds <<- cbind(od_sds, gco_sds)
+                                od_sds <<- merge(od_sds, gco_sds, all=T, by="Time")
                               },
                               remove_gco = function(gco_to_remove){
                                 od_means <<- dplyr::select(.self$od_means, -any_of(c(gco_to_remove)))
@@ -165,7 +169,8 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
                                   geom_point(alpha=0.7) +
                                   scale_color_manual(values=color_scale) +
-                                  ylim(yScalemin, yScalemax)
+                                  ylim(yScalemin, yScalemax) +
+                                  labs(y= "OD (600nm)", x = "Time (h)") 
                                 curves_plot
                               }
                             )
