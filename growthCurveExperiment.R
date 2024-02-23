@@ -1,11 +1,13 @@
+library(readxl)
+
 # Class "GrowthCurve"
 GrowthCurve <- setRefClass("GrowthCurve",
                            fields = list(name = "character", data = "data.frame",
                                          data_stats = "list", means = "data.frame", sds = "data.frame"),
-                           
                            methods = list(
                              initialize = function(name = character(), data = data.frame(),
-                                                   strain_plate_cols = list(),strain_plate_rows = list()){
+                                                   strain_plate_cols = list(),
+                                                   strain_plate_rows = list()){
                                .self$name <- name
                                .self$data <- as.data.frame(data)
                                #.self$data$Time <- lapply(.self$data$Time, .self$parse_time_in_hours)
@@ -16,21 +18,11 @@ GrowthCurve <- setRefClass("GrowthCurve",
                                #.self$sds <- .self$data_stats[[2]]
                                .self$calculate_stats()
                                },
-                             parse_time_in_hours = function(time_string){
-                               time_split <- strsplit(time_string, split = ":")
-                               hours <- as.numeric(time_split[[1]][1])
-                               mins <- as.numeric(time_split[[1]][2]) + (as.numeric(time_split[[1]][3])/60)
-                               return(hours + (mins/60))
-                               },
-                             parse_time_column = function(){
-                               .self$data$Time <- lapply(.self$data$Time, .self$parse_time_in_hours)
-                               },
                              calculate_stats = function(){
                                rowSDs <- function(x, na.rm=F) {
                                  # Vectorised version of variance filter
                                  return(apply(x, MARGIN = 1, FUN = sd))
                                }
-                               
                                .self$means <- dplyr::select(.self$data, "Time")
                                .self$sds <- dplyr::select(.self$data, "Time")
                                .self$means <- cbind(.self$means, data.frame(rowMeans(.self$data[2:ncol(.self$data)])))
@@ -44,44 +36,47 @@ GrowthCurve <- setRefClass("GrowthCurve",
 
 # Class "GrowthCurveExperiment"
 GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
-                            fields = list(name = "character", data = "data.frame",
-                                          strains_names = "list",
-                                          strains_plate_cols = "list",
-                                          strains_plate_rows = "list", 
-                                          replicates = "numeric",
-                                          blank = "logical",
+                            fields = list(name = "character", strains_names = "vector",
                                           growthCurveObjects = "list",
                                           od_means = "data.frame",
                                           od_sds = "data.frame",
-                                          parseTime = "logical"),
+                                          gc_df = "data.frame"),
                             methods = list(
-                              initialize = function(name = character()
-                              ){
+                              # Create GrowthCurve object
+                              initialize = function(name = character())
+                                {
                                 .self$name <- name
                               },
-                              create_gc_objects_from_table1 = function(data = data.frame(),
-                                                                       strains_names = list(),
+                              parse_time_in_hours_biotek = function(time_string){
+                                # Parse Time from Biotek-style results (strings in the form: "00:09:10")
+                                return(time_string * 24)
+                              },
+                              read.gc.file.biotek = function(gc_path, gc_range, n_plate_cols, n_plate_rows)
+                                {
+                                # Calculate the amount of samples 
+                                n_samples <- n_plate_cols * n_plate_rows
+                                # Read excel file
+                                .self$gc_df <- readxl::read_excel(path = gc_path, sheet = "Plate 1 - Sheet1", range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
+                                # Parse time 
+                                .self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_biotek)
+                                .self$gc_df$Time <- as.numeric(.self$gc_df$Time)
+                                return(gc_df)
+                              },
+                              create_gc_objects_from_table1 = function(gc_df_path,
+                                                                       gc_range = character(),
+                                                                       plate_reader_type = character(),
+                                                                       strains_names = c(),
                                                                        strains_plate_cols = list(),
                                                                        strains_plate_rows = list(),
-                                                                       blank = logical(),
-                                                                       parseTime = logical()){
-                                # Set all fields with the values passed in the constructor
-                                .self$strains_plate_rows <- strains_plate_rows
-                                .self$data <- data
-                                #print(head(.self$data))
-                                .self$od_means <- data.frame()
-                                .self$od_sds <- data.frame()
-                                .self$strains_names <- as.list(strains_names)
-                                .self$parseTime <- parseTime
+                                                                       blank = logical()
+                                                                       ){
+                                .self$strains_names = strains_names
                                 
-                                # Get number of replicates
-                                .self$replicates = length(.self$strains_plate_rows)
-                                
-                                # Parse time column in the data DF.
-                                if (.self$parseTime) {
-                                  .self$parse_time_column()
+                                if(plate_reader_type == "Biotek") {
+                                  .self$gc_df <- .self$read.gc.file.biotek(gc_path = gc_df_path, gc_range = gc_range,
+                                                                     n_plate_cols = length(strains_plate_cols),
+                                                                     n_plate_rows = length(strains_plate_rows))
                                 }
-                                #print(head(.self$data))
                                 
                                 # Create list of GrowthCurve Objects.
                                 # Get wells list for each strain
@@ -94,28 +89,20 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                     #strain_wells <- append(strain_wells, paste(rowstr, colstr, sep = ""))
                                     strain_wells <- c(strain_wells, paste(rowstr, colstr, sep = ""))
                                   }
-                                  # generate and add the growth curve object to list
+                                  # Generate and add the growth curve object to list
                                   #print(strains_names[[bacteria_count]])
                                   #print(strain_wells)
                                   #print(c("Time", strain_wells))
                                   #print(head(.self$data))
-                                  growthCurveObjects <<- append(growthCurveObjects, GrowthCurve$new(name=strains_names[[1]][bacteria_count], data  = dplyr::select(.self$data, all_of(c("Time", strain_wells)))))
+                                  growthCurveObjects <<- append(growthCurveObjects, GrowthCurve$new(name=.self$strains_names[bacteria_count], data  = dplyr::select(.self$gc_df, all_of(c("Time", strain_wells)))))
                                   bacteria_count = bacteria_count + 1
                                 }
+                                get_strains_stats_df()
                               },
-                              parse_time_in_hours = function(time_string){
-                                time_split <- strsplit(time_string, split = ":")
-                                hours <- as.numeric(time_split[[1]][1])
-                                mins <- as.numeric(time_split[[1]][2]) + (as.numeric(time_split[[1]][3])/60)
-                                return(hours + (mins/60))
-                              },
-                              parse_time_column = function(){
-                                .self$data$Time <- as.double(lapply(.self$data$Time, .self$parse_time_in_hours))
-                              },
-                              get_strains_stats_df = function(){
+                              get_strains_stats_df = function(calculate_model = TRUE){
                                 # Empty dfs for means and sds, first column is "Time" variable.
-                                .self$od_means <- dplyr::select(.self$data, "Time")
-                                .self$od_sds <- dplyr::select(.self$data, "Time")
+                                .self$od_means <- dplyr::select(.self$gc_df, "Time")
+                                .self$od_sds <- dplyr::select(.self$gc_df, "Time")
                                 for (gco in growthCurveObjects) {
                                   print(gco$name)
                                   # Calculate the stats for each strain in GrowthCurve objects list
@@ -123,10 +110,23 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   gco_means <- dplyr::select(gco$means, "mean")
                                   colnames(gco_means) <- gco$name
                                   od_means <<- cbind(od_means, gco_means)
-
+                                  
                                   gco_sds <- dplyr::select(gco$sds, "sd")
                                   colnames(gco_sds) <- gco$name
                                   od_sds <<- cbind(od_sds, gco_sds)
+                                  
+                                  if (calculate_model) {
+                                    #
+                                    df.predicted.plate <- calculate_growth_curve_models(.self$od_means)
+                                    
+                                    pred_g <- tidyr::gather(df.predicted.plate, key = "Species", value = "pred.od", 2:(n_samples + 1))
+                                    
+                                    od_means_sds_preds <- cbind(od_g, od_sds_g$SD, pred_g$pred.od)
+                                    
+                                    colnames(od_means_sds_preds) <- c("Time", "Species", "od", "sd", "pred.od")
+                                    
+                                    return(od_means_sds_preds)
+                                  }
                                 }
                               },
                               add_gco = function(gco_to_add){
@@ -151,27 +151,161 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               },
                               merge_experiments = function(gco_to_remove){
                                 #toDo
-                              },
-                              plot_curves = function(yScalemin = 0, yScalemax = 1){
+                              }
+                              plot_curves = function(yScalemin = NULL, yScalemax = NULL){
                                 #print(length(.self$strains_names[[1]]))
-                                od_g <- tidyr::gather(.self$od_means, key = "Species", value = "OD", 2:(length(.self$strains_names[[1]]) + 1))
-                                print(od_g, 20)
-                                od_sds_g <- tidyr::gather(.self$od_sds, key = "Species", value = "SD", 2:(length(.self$strains_names[[1]]) + 1))
-                                
+                                od_g <- tidyr::gather(.self$od_means, key = "Species", value = "OD", 2:(length(.self$strains_names) + 1))
+                                print(head(od_g))
+                                od_sds_g <- tidyr::gather(.self$od_sds, key = "Species", value = "SD", 2:(length(.self$strains_names) + 1))
+                                print(head(od_sds_g))
                                 od_means_sds_preds <- cbind(od_g, od_sds_g$SD)
-                                
+                                print(head(od_means_sds_preds))
+                                print(summary(od_means_sds_preds))
+                                print(sapply(od_means_sds_preds, mode))
                                 colnames(od_means_sds_preds) <- c("Time", "Species", "od", "sd")
                                 
                                 color_scale = c("#AD7BE9", "#3E54AC", "#658864", "#6D9886", "#E96479", "#E69F00", "#FC7300",  "#183A1D", "#635985", "#F99417", "#FEA1BF", "#5BC0F8", "#DC0000", "#495579")
                                 
-                                curves_plot <- od_means_sds_preds %>%
-                                  ggplot(aes(x = Time, y = od, group = Species, color = Species)) +
-                                  geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
-                                  geom_point(alpha=0.7) +
-                                  scale_color_manual(values=color_scale) +
-                                  ylim(yScalemin, yScalemax) +
-                                  labs(y= "OD (600nm)", x = "Time (h)") 
-                                curves_plot
-                              }
+                                if (!is.null(yScalemin) && !is.null(yScalemax)) {
+                                  curves_plot <- od_means_sds_preds %>%
+                                    ggplot(aes(x = Time, y = od, group = Species, color = Species)) +
+                                    geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
+                                    geom_point(alpha=0.7) +
+                                    scale_color_manual(values=color_scale) +
+                                    ylim(yScalemin, yScalemax) +
+                                    labs(y= "OD (600nm)", x = "Time (h)") 
+                                  curves_plot
+                                }else{
+                                  curves_plot <- od_means_sds_preds %>%
+                                    ggplot(aes(x = Time, y = od, group = Species, color = Species)) +
+                                    geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
+                                    geom_point(alpha=0.7) +
+                                    scale_color_manual(values=color_scale) +
+                                    labs(y= "OD (600nm)", x = "Time (h)") 
+                                  curves_plot
+                                }
+                              },
                             )
 )
+
+
+# parse_time_in_hours = function(time_string){
+#   time_split <- strsplit(time_string, split = ":")
+#   hours <- as.numeric(time_split[[1]][1])
+#   mins <- as.numeric(time_split[[1]][2]) + (as.numeric(time_split[[1]][3])/60)
+#   return(hours + (mins/60))
+# },
+# parse_time_column = function(){
+#   .self$data$Time <- as.double(lapply(.self$data$Time, .self$parse_time_in_hours))
+# },
+get_strains_stats_df = function(){
+  # Empty dfs for means and sds, first column is "Time" variable.
+  .self$od_means <- dplyr::select(.self$data, "Time")
+  .self$od_sds <- dplyr::select(.self$data, "Time")
+  for (gco in growthCurveObjects) {
+    print(gco$name)
+    # Calculate the stats for each strain in GrowthCurve objects list
+    # and append to each stats df
+    gco_means <- dplyr::select(gco$means, "mean")
+    colnames(gco_means) <- gco$name
+    od_means <<- cbind(od_means, gco_means)
+    
+    gco_sds <- dplyr::select(gco$sds, "sd")
+    colnames(gco_sds) <- gco$name
+    od_sds <<- cbind(od_sds, gco_sds)
+  }
+},
+add_gco = function(gco_to_add){
+  .self$strains_names[[1]] <-c(.self$strains_names[[1]], gco_to_add[[1]]$name)
+  
+  #gco_means <- dplyr::select(gco_to_add[[1]]$means, "mean")
+  gco_means <- gco_to_add[[1]]$means
+  colnames(gco_means) <- c("Time", gco_to_add[[1]]$name)
+  #od_means <<- cbind(od_means, gco_means)
+  od_means <<- merge(od_means, gco_means, all = T, by="Time")
+  
+  #gco_sds <- dplyr::select(gco_to_add[[1]]$sds, "sd")
+  gco_sds <- gco_to_add[[1]]$sds
+  colnames(gco_sds) <- c("Time", gco_to_add[[1]]$name)
+  #od_sds <<- cbind(od_sds, gco_sds)
+  od_sds <<- merge(od_sds, gco_sds, all=T, by="Time")
+},
+remove_gco = function(gco_to_remove){
+  od_means <<- dplyr::select(.self$od_means, -any_of(c(gco_to_remove)))
+  od_sds <<- dplyr::select(.self$od_sds, -any_of(c(gco_to_remove)))
+  .self$strains_names[[1]] <- .self$strains_names[[1]][.self$strains_names[[1]] != gco_to_remove]
+},
+merge_experiments = function(gco_to_remove){
+  #toDo
+},
+plot_curves = function(yScalemin = 0, yScalemax = 1){
+  #print(length(.self$strains_names[[1]]))
+  od_g <- tidyr::gather(.self$od_means, key = "Species", value = "OD", 2:(length(.self$strains_names[[1]]) + 1))
+  print(od_g, 20)
+  od_sds_g <- tidyr::gather(.self$od_sds, key = "Species", value = "SD", 2:(length(.self$strains_names[[1]]) + 1))
+  
+  od_means_sds_preds <- cbind(od_g, od_sds_g$SD)
+  
+  colnames(od_means_sds_preds) <- c("Time", "Species", "od", "sd")
+  
+  color_scale = c("#AD7BE9", "#3E54AC", "#658864", "#6D9886", "#E96479", "#E69F00", "#FC7300",  "#183A1D", "#635985", "#F99417", "#FEA1BF", "#5BC0F8", "#DC0000", "#495579")
+  
+  curves_plot <- od_means_sds_preds %>%
+    ggplot(aes(x = Time, y = od, group = Species, color = Species)) +
+    geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
+    geom_point(alpha=0.7) +
+    scale_color_manual(values=color_scale) +
+    ylim(yScalemin, yScalemax) +
+    labs(y= "OD (600nm)", x = "Time (h)") 
+  curves_plot
+}
+parse_time_in_hours = function(time_string){
+  time_split <- strsplit(time_string, split = ":")
+  hours <- as.numeric(time_split[[1]][1])
+  mins <- as.numeric(time_split[[1]][2]) + (as.numeric(time_split[[1]][3])/60)
+  return(hours + (mins/60))
+},
+create_gc_objects_from_table1 = function(data = data.frame(),
+                                         strains_names = list(),
+                                         strains_plate_cols = list(),
+                                         strains_plate_rows = list(),
+                                         blank = logical(),
+                                         parseTime = logical()){
+  # Set all fields with the values passed in the constructor
+  .self$strains_plate_rows <- strains_plate_rows
+  .self$data <- data
+  #print(head(.self$data))
+  .self$od_means <- data.frame()
+  .self$od_sds <- data.frame()
+  .self$strains_names <- as.list(strains_names)
+  .self$parseTime <- parseTime
+  
+  # Get number of replicates
+  .self$replicates = length(.self$strains_plate_rows)
+  
+  # Parse time column in the DF.
+  if (.self$parseTime) {
+    .self$parse_time_column()
+  }
+  #print(head(.self$data))
+  
+  # Create list of GrowthCurve Objects.
+  # Get wells list for each strain
+  bacteria_count = 1
+  for (colstr in strains_plate_cols) {
+    #strain_wells <- list()
+    strain_wells <- c()
+    for (rowstr in strains_plate_rows) {
+      #print(paste(rowstr, colstr, sep = ""))
+      #strain_wells <- append(strain_wells, paste(rowstr, colstr, sep = ""))
+      strain_wells <- c(strain_wells, paste(rowstr, colstr, sep = ""))
+    }
+    # generate and add the growth curve object to list
+    #print(strains_names[[bacteria_count]])
+    #print(strain_wells)
+    #print(c("Time", strain_wells))
+    #print(head(.self$data))
+    growthCurveObjects <<- append(growthCurveObjects, GrowthCurve$new(name=strains_names[[1]][bacteria_count], data  = dplyr::select(.self$data, all_of(c("Time", strain_wells)))))
+    bacteria_count = bacteria_count + 1
+  }
+}
