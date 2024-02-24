@@ -63,6 +63,10 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 # Parse Time from Biotek-style results (strings in the form: "00:09:10")
                                 return(time_string * 24)
                               },
+                              parse_time_in_hours_infinite = function(time_string){
+                                # Parse Time from Biotek-style results (strings in the form: "00:09:10")
+                                return((time_string/60)/60)
+                              },
                               read.gc.file.biotek = function(gc_path, gc_range, n_plate_cols, n_plate_rows)
                                 {
                                 # Calculate the amount of samples 
@@ -91,12 +95,14 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 n_samples <- n_plate_cols * n_plate_rows
                                 # Read excel file
                                 .self$gc_df <- readxl::read_excel(path = gc_path, sheet = p_sheet, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples+1)))
+                                .self$gc_df <- subset(.self$gc_df, select = -c(`Temp. [°C]`))
+                                colnames(.self$gc_df) <- c("Time", colnames(.self$gc_df)[2:length(.self$gc_df)])
                                 # Parse time 
-                                #.self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_biotek)
-                                #.self$gc_df$Time <- as.numeric(.self$gc_df$Time)
+                                .self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_infinite)
+                                .self$gc_df$Time <- as.numeric(.self$gc_df$Time)
                                 return(gc_df)
                               },
-                              create_gc_objects_from_table1 = function(gc_df_path,
+                              create_gc_objects_from_table = function(gc_df_path,
                                                                        gc_range = character(),
                                                                        plate_reader_type = character(),
                                                                        strains_names = c(),
@@ -119,8 +125,6 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                                                            n_plate_cols = length(strains_plate_cols),
                                                                            n_plate_rows = length(strains_plate_rows))
                                   
-                                  .self$gc_df <- subset(.self$gc_df, select = -c(`Temp. [°C]`))
-                                  colnames(.self$gc_df) <- c("Time", colnames(.self$gc_df)[2:length(.self$gc_df)])
                                 }
                                 
                                 # Create list of GrowthCurve Objects.
@@ -162,8 +166,8 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               },
                               get_strains_stats_df = function(){
                                 # Empty dfs for means and sds, first column is "Time" variable.
-                                .self$od_means <- dplyr::select(.self$gc_df, "Time")
-                                .self$od_sds <- dplyr::select(.self$gc_df, "Time")
+                                .self$od_means <- dplyr::select(.self$growthCurveObjects[[1]]$data, "Time")
+                                .self$od_sds <- dplyr::select(.self$growthCurveObjects[[1]]$data, "Time")
                                 for (gco in growthCurveObjects) {
                                   #print(gco$name)
                                   # Calculate the stats for each strain in GrowthCurve objects list
@@ -179,7 +183,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               },
                               add_gco = function(gco_to_add){
                                 .self$strains_names <- c(.self$strains_names, gco_to_add[[1]]$name)
-                                .self$growthCurveObjects[[1]] <- c(.self$growthCurveObjects[[1]], gco_to_add)
+                                .self$growthCurveObjects <- c(.self$growthCurveObjects, gco_to_add)
                                 get_strains_stats_df()
                               },
                               remove_gco = function(gco_to_remove_name){
