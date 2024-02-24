@@ -1,4 +1,16 @@
+# Install and load packages
+if (!require("readxl", quietly = TRUE))
+  install.packages("readxl")
+
+if (!require("ggplot2", quietly = TRUE))
+  install.packages("ggplot2")
+
+if (!require("dplyr", quietly = TRUE))
+  install.packages("dplyr")
+
 library(readxl)
+library(ggplot2)
+library(dplyr)
 
 # Class "GrowthCurve"
 GrowthCurve <- setRefClass("GrowthCurve",
@@ -62,6 +74,28 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 .self$gc_df$Time <- as.numeric(.self$gc_df$Time)
                                 return(gc_df)
                               },
+                              read.gc.file.spark = function(gc_path, gc_range, n_plate_cols, n_plate_rows)
+                              {
+                                # Calculate the amount of samples 
+                                n_samples <- n_plate_cols * n_plate_rows
+                                # Read excel file
+                                .self$gc_df <- readxl::read_excel(path = gc_path, sheet = "Plate 1 - Sheet1", range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
+                                # Parse time 
+                                .self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_biotek)
+                                .self$gc_df$Time <- as.numeric(.self$gc_df$Time)
+                                return(gc_df)
+                              },
+                              read.gc.file.infinite = function(gc_path, gc_range, n_plate_cols, n_plate_rows, p_sheet = "Sheet2")
+                              {
+                                # Calculate the amount of samples 
+                                n_samples <- n_plate_cols * n_plate_rows
+                                # Read excel file
+                                .self$gc_df <- readxl::read_excel(path = gc_path, sheet = p_sheet, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples+1)))
+                                # Parse time 
+                                #.self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_biotek)
+                                #.self$gc_df$Time <- as.numeric(.self$gc_df$Time)
+                                return(gc_df)
+                              },
                               create_gc_objects_from_table1 = function(gc_df_path,
                                                                        gc_range = character(),
                                                                        plate_reader_type = character(),
@@ -76,6 +110,17 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   .self$gc_df <- .self$read.gc.file.biotek(gc_path = gc_df_path, gc_range = gc_range,
                                                                      n_plate_cols = length(strains_plate_cols),
                                                                      n_plate_rows = length(strains_plate_rows))
+                                }else if (plate_reader_type == "Spark"){
+                                  .self$gc_df <- .self$read.gc.file.spark(gc_path = gc_df_path, gc_range = gc_range,
+                                                                           n_plate_cols = length(strains_plate_cols),
+                                                                           n_plate_rows = length(strains_plate_rows))
+                                }else if (plate_reader_type == "Infinite"){
+                                  .self$gc_df <- .self$read.gc.file.infinite(gc_path = gc_df_path, gc_range = gc_range,
+                                                                           n_plate_cols = length(strains_plate_cols),
+                                                                           n_plate_rows = length(strains_plate_rows))
+                                  
+                                  .self$gc_df <- subset(.self$gc_df, select = -c(`Temp. [°C]`))
+                                  colnames(.self$gc_df) <- c("Time", colnames(.self$gc_df)[2:length(.self$gc_df)])
                                 }
                                 
                                 # Create list of GrowthCurve Objects.
@@ -98,6 +143,22 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   bacteria_count = bacteria_count + 1
                                 }
                                 get_strains_stats_df()
+                              },
+                              calculate_growth_curve_models = function(growth.curve.points){
+                                # Based on https://rpubs.com/angelov/growthcurver.
+                                summG <- function(x) {growthcurver::SummarizeGrowth(growth.curve.points$Time,x)}
+                                models.all <- lapply(growth.curve.points[2:ncol(growth.curve.points)], summG)
+                                
+                                df.predicted <- data.frame(time = growth.curve.points$Time)
+                                
+                                #print(head(df.predicted.plate))
+                                for (i in names(growth.curve.points[2:ncol(growth.curve.points)])) 
+                                {
+                                  df.predicted[[i]] <- predict(models.all[[i]]$model)
+                                }
+                                colnames(df.predicted) <- c("Time", colnames(df.predicted)[2:ncol(df.predicted)])
+                                
+                                return(df.predicted)
                               },
                               get_strains_stats_df = function(){
                                 # Empty dfs for means and sds, first column is "Time" variable.
