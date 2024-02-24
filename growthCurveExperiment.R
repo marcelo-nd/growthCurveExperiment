@@ -8,9 +8,13 @@ if (!require("ggplot2", quietly = TRUE))
 if (!require("dplyr", quietly = TRUE))
   install.packages("dplyr")
 
+if (!require("growthcurver", quietly = TRUE))
+  install.packages("growthcurver")
+
 library(readxl)
 library(ggplot2)
 library(dplyr)
+library(growthcurver)
 
 # Class "GrowthCurve"
 GrowthCurve <- setRefClass("GrowthCurve",
@@ -250,3 +254,4 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               }
                             )
 )
+# To do: Blank subtraction, PRs correction, multipanel graphs
