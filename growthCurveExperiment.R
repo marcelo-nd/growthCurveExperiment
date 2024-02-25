@@ -99,11 +99,16 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 n_samples <- n_plate_cols * n_plate_rows
                                 # Read excel file
                                 .self$gc_df <- readxl::read_excel(path = gc_path, sheet = p_sheet, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples+1)))
+                                # Get rid of column with temperature values in Infinite PR result files
                                 .self$gc_df <- subset(.self$gc_df, select = -c(`Temp. [°C]`))
                                 colnames(.self$gc_df) <- c("Time", colnames(.self$gc_df)[2:length(.self$gc_df)])
                                 # Parse time 
                                 .self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_infinite)
                                 .self$gc_df$Time <- as.numeric(.self$gc_df$Time)
+                                # Adjust with Plate Readers conversion factor (od = preader.od * 4.4131 - 0.3588)
+                                #print(head(.self$gc_df[, 2:ncol(.self$gc_df)]*4.4131 - 0.3588))
+                                .self$gc_df <- cbind(.self$gc_df$Time, .self$gc_df[, 2:ncol(.self$gc_df)]*4.4131 - 0.3588)
+                                colnames(.self$gc_df) <- c("Time", colnames(.self$gc_df)[2:length(.self$gc_df)])
                                 return(gc_df)
                               },
                               create_gc_objects_from_table = function(gc_df_path,
@@ -156,13 +161,51 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 # Based on https://rpubs.com/angelov/growthcurver.
                                 summG <- function(x) {growthcurver::SummarizeGrowth(growth.curve.points$Time,x)}
                                 models.all <- lapply(growth.curve.points[2:ncol(growth.curve.points)], summG)
-                                
+                                #print(models.all)
                                 df.predicted <- data.frame(time = growth.curve.points$Time)
                                 
                                 #print(head(df.predicted.plate))
                                 for (i in names(growth.curve.points[2:ncol(growth.curve.points)])) 
                                 {
-                                  df.predicted[[i]] <- predict(models.all[[i]]$model)
+                                  #print("column:")
+                                  #print(i)
+                                  #print(is.null(models.all[[i]]$model))
+                                  
+                                  df.predicted_val <- NA
+                                  tryCatch(
+                                    {
+                                      # Just to highlight: if you want to use more than one
+                                      # R expression in the "try" part then you'll have to
+                                      # use curly brackets.
+                                      # 'tryCatch()' will return the last evaluated expression
+                                      # in case the "try" part was completed successfully
+                                      
+                                      message("This is the 'try' part")
+                                      
+                                      #suppressWarnings(df.predicted[[i]] <- predict(models.all[[i]]$model))
+                                      df.predicted_val <- predict(models.all[[i]]$model)
+                                      # The return value of `readLines()` is the actual value
+                                      # that will be returned in case there is no condition
+                                      # (e.g. warning or error).
+                                    },
+                                    error = function(cond) {
+                                      #message(paste("URL does not seem to exist:", url))
+                                      message("Here's the original error message:")
+                                      message(conditionMessage(cond))
+                                      # Choose a return value in case of error
+                                      df.predicted_val <- NA
+                                    },
+                                    finally = {
+                                      # NOTE:
+                                      # Here goes everything that should be executed at the end,
+                                      # regardless of success or error.
+                                      # If you want more than one expression to be executed, then you
+                                      # need to wrap them in curly brackets ({...}); otherwise you could
+                                      # just have written 'finally = <expression>' 
+                                      message("Some other message at the end")
+                                      df.predicted[[i]] <- df.predicted_val
+                                    }
+                                  )
                                 }
                                 colnames(df.predicted) <- c("Time", colnames(df.predicted)[2:ncol(df.predicted)])
                                 
@@ -220,6 +263,8 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   #
                                   df.predicted.plate <- calculate_growth_curve_models(.self$od_means)
                                   
+                                  #print(head(df.predicted.plate))
+                                  
                                   pred_g <- tidyr::gather(df.predicted.plate, key = "Species", value = "pred.od", 2:(length(.self$strains_names) + 1))
                                   
                                   od_means_sds_preds <- cbind(od_g, od_sds_g$SD, pred_g$pred.od)
@@ -246,11 +291,12 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                     labs(y= "OD (600nm)", x = "Time (h)")
                                 }
                                 
-                                if (calculate_model == TRUE) {
+                                if (calculate_model) {
                                   # Add model lines
-                                  curves_plot +
+                                  curves_plot <- curves_plot +
                                     geom_line(aes(x = Time, y=pred.od), linewidth = 0.5)
                                 }
+                                return(curves_plot)
                               }
                             )
 )
