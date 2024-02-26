@@ -88,7 +88,10 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 }
                                 
                                 # Substract blank measurements
-                                .self$gc_df <- substract_blank(.self$gc_df)
+                                if (blank == TRUE) {
+                                  substract_blank(.self$gc_df, blank_col = 1, strains_plate_rows= list("A", "B", "C", "D", "E", "F", "G", "H"))
+                                  #.self$gc_df <- substract_blank(.self$gc_df, blank_col = 1, strains_plate_rows= list("A", "B", "C", "D", "E", "F", "G", "H"))
+                                }
                                 
                                 # Create list of GrowthCurve Objects.
                                 # Get wells list for each strain
@@ -119,9 +122,30 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 # Parse Time from Biotek-style results (strings in the form: "00:09:10")
                                 return((time_string/60)/60)
                               },
-                              substract_blank = function(gc_df){
+                              substract_blank = function(nob_gc_df, blank_col, strains_plate_rows){
+                                strain_wells <- c()
+                                # Iterate over rows
+                                for (rowstr in strains_plate_rows) {
+                                  #print(paste(rowstr, colstr, sep = ""))
+                                  #strain_wells <- append(strain_wells, paste(rowstr, colstr, sep = ""))
+                                  strain_wells <- c(strain_wells, paste(rowstr, "1", sep = ""))
+                                }
+                                blank_means <- rowMeans(dplyr::select(.self$gc_df, all_of(c(strain_wells))))
+                                print(head(blank_means))
+                                print(length(blank_means))
                                 
-                              }
+                                # copy non blank DF
+                                new_df <- nob_gc_df[,2:ncol(nob_gc_df)]
+                                # Now iterate over dataframe to substract blank value
+                                if (length(blank_means == nrow(nob_gc_df))) {
+                                  for (gc_row in 1:nrow(new_df)) {
+                                    new_df[1, ]
+                                  }
+                                  else{
+                                    print("Gc and blank means are not equal")
+                                  }
+                                }
+                                },
                               read.gc.file.biotek = function(gc_path, gc_range, n_plate_cols, n_plate_rows)
                                 {
                                 # Calculate the amount of samples 
