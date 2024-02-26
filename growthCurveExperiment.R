@@ -63,78 +63,32 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 {
                                 .self$name <- name
                               },
-                              parse_time_in_hours_biotek = function(time_string){
-                                # Parse Time from Biotek-style results (strings in the form: "00:09:10")
-                                return(time_string * 24)
-                              },
-                              parse_time_in_hours_infinite = function(time_string){
-                                # Parse Time from Biotek-style results (strings in the form: "00:09:10")
-                                return((time_string/60)/60)
-                              },
-                              read.gc.file.biotek = function(gc_path, gc_range, n_plate_cols, n_plate_rows)
-                                {
-                                # Calculate the amount of samples 
-                                n_samples <- n_plate_cols * n_plate_rows
-                                # Read excel file
-                                .self$gc_df <- readxl::read_excel(path = gc_path, sheet = "Plate 1 - Sheet1", range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
-                                # Parse time 
-                                .self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_biotek)
-                                .self$gc_df$Time <- as.numeric(.self$gc_df$Time)
-                                return(gc_df)
-                              },
-                              read.gc.file.spark = function(gc_path, gc_range, n_plate_cols, n_plate_rows)
-                              {
-                                # Calculate the amount of samples 
-                                n_samples <- n_plate_cols * n_plate_rows
-                                # Read excel file
-                                .self$gc_df <- readxl::read_excel(path = gc_path, sheet = "Plate 1 - Sheet1", range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
-                                # Parse time 
-                                .self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_biotek)
-                                .self$gc_df$Time <- as.numeric(.self$gc_df$Time)
-                                return(gc_df)
-                              },
-                              read.gc.file.infinite = function(gc_path, gc_range, n_plate_cols, n_plate_rows, p_sheet = "Sheet2")
-                              {
-                                # Calculate the amount of samples 
-                                n_samples <- n_plate_cols * n_plate_rows
-                                # Read excel file
-                                .self$gc_df <- readxl::read_excel(path = gc_path, sheet = p_sheet, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples+1)))
-                                # Get rid of column with temperature values in Infinite PR result files
-                                .self$gc_df <- subset(.self$gc_df, select = -c(`Temp. [°C]`))
-                                colnames(.self$gc_df) <- c("Time", colnames(.self$gc_df)[2:length(.self$gc_df)])
-                                # Parse time 
-                                .self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_infinite)
-                                .self$gc_df$Time <- as.numeric(.self$gc_df$Time)
-                                # Adjust with Plate Readers conversion factor (od = preader.od * 4.4131 - 0.3588)
-                                #print(head(.self$gc_df[, 2:ncol(.self$gc_df)]*4.4131 - 0.3588))
-                                .self$gc_df <- cbind(.self$gc_df$Time, .self$gc_df[, 2:ncol(.self$gc_df)]*4.4131 - 0.3588)
-                                colnames(.self$gc_df) <- c("Time", colnames(.self$gc_df)[2:length(.self$gc_df)])
-                                return(gc_df)
-                              },
                               create_gc_objects_from_table = function(gc_df_path,
-                                                                       gc_range = character(),
-                                                                       plate_reader_type = character(),
-                                                                       strains_names = c(),
-                                                                       strains_plate_cols = list(),
-                                                                       strains_plate_rows = list(),
-                                                                       blank = logical()
-                                                                       ){
+                                                                      gc_range = character(),
+                                                                      plate_reader_type = character(),
+                                                                      strains_names = c(),
+                                                                      strains_plate_cols = list(),
+                                                                      strains_plate_rows = list(),
+                                                                      blank = logical()
+                              ){
                                 .self$strains_names = strains_names
                                 
                                 if(plate_reader_type == "Biotek") {
                                   .self$gc_df <- .self$read.gc.file.biotek(gc_path = gc_df_path, gc_range = gc_range,
-                                                                     n_plate_cols = length(strains_plate_cols),
-                                                                     n_plate_rows = length(strains_plate_rows))
+                                                                           n_plate_cols = length(strains_plate_cols),
+                                                                           n_plate_rows = length(strains_plate_rows))
                                 }else if (plate_reader_type == "Spark"){
                                   .self$gc_df <- .self$read.gc.file.spark(gc_path = gc_df_path, gc_range = gc_range,
-                                                                           n_plate_cols = length(strains_plate_cols),
-                                                                           n_plate_rows = length(strains_plate_rows))
+                                                                          n_plate_cols = length(strains_plate_cols),
+                                                                          n_plate_rows = length(strains_plate_rows))
                                 }else if (plate_reader_type == "Infinite"){
                                   .self$gc_df <- .self$read.gc.file.infinite(gc_path = gc_df_path, gc_range = gc_range,
-                                                                           n_plate_cols = length(strains_plate_cols),
-                                                                           n_plate_rows = length(strains_plate_rows))
-                                  
+                                                                             n_plate_cols = length(strains_plate_cols),
+                                                                             n_plate_rows = length(strains_plate_rows))
                                 }
+                                
+                                # Substract blank measurements
+                                .self$gc_df <- substract_blank(.self$gc_df)
                                 
                                 # Create list of GrowthCurve Objects.
                                 # Get wells list for each strain
@@ -156,6 +110,65 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   bacteria_count = bacteria_count + 1
                                 }
                                 get_strains_stats_df()
+                              },
+                              parse_time_in_hours_biotek = function(time_string){
+                                # Parse Time from Biotek-style results (strings in the form: "00:09:10")
+                                return(time_string * 24)
+                              },
+                              parse_time_in_hours_infinite = function(time_string){
+                                # Parse Time from Biotek-style results (strings in the form: "00:09:10")
+                                return((time_string/60)/60)
+                              },
+                              substract_blank = function(gc_df){
+                                
+                              }
+                              read.gc.file.biotek = function(gc_path, gc_range, n_plate_cols, n_plate_rows)
+                                {
+                                # Calculate the amount of samples 
+                                n_samples <- n_plate_cols * n_plate_rows
+                                # Read excel file
+                                .self$gc_df <- readxl::read_excel(path = gc_path, sheet = "Plate 1 - Sheet1", range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
+                                # Parse time 
+                                .self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_biotek)
+                                .self$gc_df$Time <- as.numeric(.self$gc_df$Time)
+                                # Adjust with Plate Readers conversion factor (od = preader.od * 4.4131 - 0.3588)
+                                #print(head(.self$gc_df[, 2:ncol(.self$gc_df)]*4.4131 - 0.3588))
+                                .self$gc_df <- cbind(.self$gc_df$Time, .self$gc_df[, 2:ncol(.self$gc_df)]*3.17 - 0.26)
+                                colnames(.self$gc_df) <- c("Time", colnames(.self$gc_df)[2:length(.self$gc_df)])
+                                return(gc_df)
+                              },
+                              read.gc.file.spark = function(gc_path, gc_range, n_plate_cols, n_plate_rows)
+                              {
+                                # Calculate the amount of samples 
+                                n_samples <- n_plate_cols * n_plate_rows
+                                # Read excel file
+                                .self$gc_df <- readxl::read_excel(path = gc_path, sheet = "Plate 1 - Sheet1", range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
+                                # Parse time 
+                                .self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_biotek)
+                                .self$gc_df$Time <- as.numeric(.self$gc_df$Time)
+                                # Adjust with Plate Readers conversion factor (od = preader.od * 4.4131 - 0.3588)
+                                #print(head(.self$gc_df[, 2:ncol(.self$gc_df)]*4.4131 - 0.3588))
+                                .self$gc_df <- cbind(.self$gc_df$Time, .self$gc_df[, 2:ncol(.self$gc_df)]*3.18 - 0.28)
+                                colnames(.self$gc_df) <- c("Time", colnames(.self$gc_df)[2:length(.self$gc_df)])
+                                return(gc_df)
+                              },
+                              read.gc.file.infinite = function(gc_path, gc_range, n_plate_cols, n_plate_rows, p_sheet = "Sheet2")
+                              {
+                                # Calculate the amount of samples 
+                                n_samples <- n_plate_cols * n_plate_rows
+                                # Read excel file
+                                .self$gc_df <- readxl::read_excel(path = gc_path, sheet = p_sheet, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples+1)))
+                                # Get rid of column with temperature values in Infinite PR result files
+                                .self$gc_df <- subset(.self$gc_df, select = -c(`Temp. [°C]`))
+                                colnames(.self$gc_df) <- c("Time", colnames(.self$gc_df)[2:length(.self$gc_df)])
+                                # Parse time 
+                                .self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_infinite)
+                                .self$gc_df$Time <- as.numeric(.self$gc_df$Time)
+                                # Adjust with Plate Readers conversion factor (od = preader.od * 4.4131 - 0.3588)
+                                #print(head(.self$gc_df[, 2:ncol(.self$gc_df)]*4.4131 - 0.3588))
+                                .self$gc_df <- cbind(.self$gc_df$Time, .self$gc_df[, 2:ncol(.self$gc_df)]*4.4131 - 0.3588)
+                                colnames(.self$gc_df) <- c("Time", colnames(.self$gc_df)[2:length(.self$gc_df)])
+                                return(gc_df)
                               },
                               calculate_growth_curve_models = function(growth.curve.points){
                                 # Based on https://rpubs.com/angelov/growthcurver.
