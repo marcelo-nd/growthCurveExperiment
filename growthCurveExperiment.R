@@ -138,13 +138,13 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 new_df <- nob_gc_df[,2:ncol(nob_gc_df)]
                                 # Now iterate over dataframe to substract blank value
                                 if (length(blank_means == nrow(nob_gc_df))) {
-                                  for (gc_row in 1:nrow(new_df)) {
-                                    new_df[1, ]
+                                  #for (gc_row in 1:nrow(new_df)) {
+                                  #  new_df[1, ]
                                   }
-                                  else{
+                                else{
                                     print("Gc and blank means are not equal")
                                   }
-                                }
+                                #}
                                 },
                               read.gc.file.biotek = function(gc_path, gc_range, n_plate_cols, n_plate_rows)
                                 {
