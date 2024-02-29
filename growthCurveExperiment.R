@@ -150,6 +150,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 {
                                 # Calculate the amount of samples 
                                 n_samples <- n_plate_cols * n_plate_rows
+                                print(n_samples)
                                 # Read excel file
                                 .self$gc_df <- readxl::read_excel(path = gc_path, sheet = "Plate 1 - Sheet1", range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
                                 # Parse time 
