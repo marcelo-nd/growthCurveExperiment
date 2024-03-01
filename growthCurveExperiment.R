@@ -69,18 +69,21 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                                                       strains_names = c(),
                                                                       strains_plate_cols = list(),
                                                                       strains_plate_rows = list(),
-                                                                      blank = logical()
+                                                                      blank = logical(),
+                                                                      pr_correction = logical()
                               ){
                                 .self$strains_names = strains_names
                                 
                                 if(plate_reader_type == "Biotek") {
                                   .self$gc_df <- .self$read.gc.file.biotek(gc_path = gc_df_path, gc_range = gc_range,
                                                                            n_plate_cols = length(strains_plate_cols),
-                                                                           n_plate_rows = length(strains_plate_rows))
+                                                                           n_plate_rows = length(strains_plate_rows),
+                                                                           pr_correction = pr_correction)
                                 }else if (plate_reader_type == "Spark"){
                                   .self$gc_df <- .self$read.gc.file.spark(gc_path = gc_df_path, gc_range = gc_range,
                                                                           n_plate_cols = length(strains_plate_cols),
-                                                                          n_plate_rows = length(strains_plate_rows))
+                                                                          n_plate_rows = length(strains_plate_rows),
+                                                                          pr_correction = pr_correction)
                                 }else if (plate_reader_type == "Infinite"){
                                   .self$gc_df <- .self$read.gc.file.infinite(gc_path = gc_df_path, gc_range = gc_range,
                                                                              n_plate_cols = length(strains_plate_cols),
@@ -89,10 +92,9 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 
                                 # Substract blank measurements
                                 if (blank == TRUE) {
-                                  substract_blank(.self$gc_df, blank_col = 1, strains_plate_rows= list("A", "B", "C", "D", "E", "F", "G", "H"))
-                                  #.self$gc_df <- substract_blank(.self$gc_df, blank_col = 1, strains_plate_rows= list("A", "B", "C", "D", "E", "F", "G", "H"))
+                                  #substract_blank(.self$gc_df, blank_col = 1, strains_plate_rows= list("A", "B", "C", "D", "E", "F", "G", "H"))
+                                  .self$gc_df <- substract_blank(.self$gc_df, blank_col = 1, strains_plate_rows= list("A", "B", "C", "D", "E", "F", "G", "H"))
                                 }
-                                
                                 # Create list of GrowthCurve Objects.
                                 # Get wells list for each strain
                                 bacteria_count = 1
@@ -136,17 +138,23 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 
                                 # copy non blank DF
                                 new_df <- nob_gc_df[,2:ncol(nob_gc_df)]
+                                print("Pre")
+                                print(head(nob_gc_df))
                                 # Now iterate over dataframe to substract blank value
                                 if (length(blank_means == nrow(nob_gc_df))) {
-                                  #for (gc_row in 1:nrow(new_df)) {
-                                  #  new_df[1, ]
+                                  for (gc_row in 1:nrow(new_df)) {
+                                    new_df[gc_row, ] <- new_df[gc_row, ] - blank_means[gc_row]
                                   }
-                                else{
-                                    print("Gc and blank means are not equal")
-                                  }
-                                #}
+                                }else{
+                                    print("Gc and blank means length are not equal")
+                                }
+                                new_df <- cbind(nob_gc_df[, "Time"], new_df)
+                                colnames(new_df) <- c("Time", colnames(new_df[, 2:ncol(new_df)]))
+                                print("Post")
+                                print(head(new_df))
+                                return(new_df)
                                 },
-                              read.gc.file.biotek = function(gc_path, gc_range, n_plate_cols, n_plate_rows)
+                              read.gc.file.biotek = function(gc_path, gc_range, n_plate_cols, n_plate_rows, pr_correction)
                                 {
                                 # Calculate the amount of samples 
                                 n_samples <- n_plate_cols * n_plate_rows
@@ -157,8 +165,9 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 .self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_biotek)
                                 .self$gc_df$Time <- as.numeric(.self$gc_df$Time)
                                 # Adjust with Plate Readers conversion factor (od = preader.od * 4.4131 - 0.3588)
-                                #print(head(.self$gc_df[, 2:ncol(.self$gc_df)]*4.4131 - 0.3588))
-                                .self$gc_df <- cbind(.self$gc_df$Time, .self$gc_df[, 2:ncol(.self$gc_df)]*3.17 - 0.26)
+                                if (pr_correction == TRUE) {
+                                  .self$gc_df <- cbind(.self$gc_df$Time, .self$gc_df[, 2:ncol(.self$gc_df)]*3.17 - 0.26)
+                                }
                                 colnames(.self$gc_df) <- c("Time", colnames(.self$gc_df)[2:length(.self$gc_df)])
                                 return(gc_df)
                               },
@@ -338,4 +347,4 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               }
                             )
 )
-# To do: Blank subtraction, PRs correction, multipanel graphs
+# To do: Blank subtraction, get rid of df attributes (are not necessary), multipanel graphs, 
