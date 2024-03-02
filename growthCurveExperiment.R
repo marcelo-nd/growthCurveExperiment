@@ -22,12 +22,14 @@ GrowthCurve <- setRefClass("GrowthCurve",
                                          means = "data.frame", sds = "data.frame"),
                            methods = list(
                              initialize = function(name = character(), data = data.frame(),
-                                                   strain_plate_cols = list(),
-                                                   strain_plate_rows = list()){
-                               .self$name <- name
-                               .self$data <- as.data.frame(data)
+                                                   strain_plate_cols = list(), #contains the plate columns used (generally species)
+                                                   strain_plate_rows = list()) # contains the plate rows used (generally replicates)
+                               { 
+                               .self$name <- name # contains the name of the sample
+                               .self$data <- as.data.frame(data) # contains a DF with the growth curve data (rows: time, columns: wells)
                                
-                               # Calculate stats
+                               # Function to calculate stats (means and sd for each strain (columns))
+                               # This data is stored in means and sds DF attributes in each GrowthCurve object
                                .self$calculate_stats()
                                },
                              calculate_stats = function(){
@@ -35,12 +37,12 @@ GrowthCurve <- setRefClass("GrowthCurve",
                                  # Vectorised version of variance filter
                                  return(apply(x, MARGIN = 1, FUN = sd))
                                }
-                               .self$means <- dplyr::select(.self$data, "Time")
-                               .self$sds <- dplyr::select(.self$data, "Time")
-                               .self$means <- cbind(.self$means, data.frame(rowMeans(.self$data[2:ncol(.self$data)])))
-                               .self$sds <- cbind(.self$sds, data.frame(rowSDs(.self$data[2:ncol(.self$data)])))
-                               colnames(.self$means) <- c("Time", "mean")
-                               colnames(.self$sds) <- c("Time", "sd")
+                               .self$means <- dplyr::select(.self$data, "Time") # gets the "Time" column for the means DF
+                               .self$sds <- dplyr::select(.self$data, "Time") # gets the "Time" column for the sds DF
+                               .self$means <- cbind(.self$means, data.frame(rowMeans(.self$data[2:ncol(.self$data)]))) # calculates means
+                               .self$sds <- cbind(.self$sds, data.frame(rowSDs(.self$data[2:ncol(.self$data)]))) # calculates sds
+                               colnames(.self$means) <- c("Time", "mean") # renames columns in means DF
+                               colnames(.self$sds) <- c("Time", "sd") # renames columns in sds DF
                              }
                            )
 )
@@ -56,20 +58,23 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               # Create GrowthCurve object
                               initialize = function(name = character())
                                 {
-                                .self$name <- name
+                                .self$name <- name # the only required value to init. a GreowthCurveExperiment object is the NAME
                               },
-                              create_gc_objects_from_table = function(gc_df_path,
-                                                                      gc_range = character(),
-                                                                      plate_reader_type = character(),
-                                                                      strains_names = c(),
-                                                                      strains_plate_cols = list(),
-                                                                      strains_plate_rows = list(),
-                                                                      blank = logical(),
-                                                                      blank_col = NULL,
-                                                                      pr_correction = TRUE
+                              # The most common way to populate a GrowthCurveExperiment object is from a table.
+                              # In this kind of experiment rows are replicates and columns are species or samples.
+                              # If blank is used it should be in one column as a sample
+                              create_gc_objects_from_table = function(gc_df_path, # path to table
+                                                                      gc_range = character(), # The range inside the excel file
+                                                                      plate_reader_type = character(), # One of the 3 types of plate readers
+                                                                      strains_names = c(), # The strains or samples names 
+                                                                      strains_plate_cols = list(), # the columns measured in the plate
+                                                                      strains_plate_rows = list(), # The rows measured in the plate
+                                                                      blank = logical(), # if blank has to be substracted, TRUE
+                                                                      blank_col = NULL, # What is the column of the blank
+                                                                      pr_correction = TRUE # should plate reader correction be applied use TRUE
                               ){
                                 .self$strains_names = strains_names
-                                # Decide wich plate reader type generated file and use respective function
+                                # Decide which plate reader type generated the table file and use respective function
                                 if(plate_reader_type == "Biotek") {
                                   gc_df <- .self$read.gc.file.biotek(gc_path = gc_df_path, gc_range = gc_range,
                                                                            n_plate_cols = length(strains_plate_cols),
@@ -89,17 +94,19 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   print("Plate reader type does not exist")
                                 }
                                 
-                                # Substract blank measurements from blank column
+                                # Subtract blank measurements from blank column
                                 if (blank == TRUE && !is.null(blank_col)) {
-                                  #substract_blank(.self$gc_df, blank_col = 1, strains_plate_rows= list("A", "B", "C", "D", "E", "F", "G", "H"))
+                                  # call the substract_blank function contained in the GrowthCUrveExperiment Class
                                   gc_df_blnk <- substract_blank(gc_df, blank_col = blank_col, str_plate_rows = strains_plate_rows)
                                 }else{
+                                  # If no blank is going to be substracted just change the name pf the DF
                                   gc_df_blnk <- gc_df
                                 }
                                 
-                                # Create list of GrowthCurve Objects.
-                                # Get wells list for each strain
-                                bacteria_count = 1 # counter to keep track of the strain number
+                                # Now we create the GrowthCurve Objects from the data in the table file
+                                # The GrowthCurve objects are stored in a list in the GrowthCurveExperiment object
+                                # First we generate the wells list for each strain/sample
+                                bacteria_count = 1 # counter to keep track of the strain/sample number
                                 # Each column is a strain.
                                 for (colstr in strains_plate_cols) {
                                   strain_wells <- c()
@@ -109,34 +116,35 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   }
                                   # Generate and add the growth curve object to list
                                   # The generated well names are used to select columns from GC DF for each strain (column)
+                                  # The name of the GrowthCurve object is taken from the list of strain provided so order of this list is important
                                   # The selected data is used to generate a GrowthCurve object which is appended to the Growthcurve objects list
                                   growthCurveObjects <<- append(growthCurveObjects, GrowthCurve$new(name=.self$strains_names[bacteria_count], data  = dplyr::select(gc_df_blnk, all_of(c("Time", strain_wells)))))
-                                  bacteria_count = bacteria_count + 1
+                                  bacteria_count = bacteria_count + 1 # counter to keep track of the strain/sample number
                                 }
-                                # Calculate stats df
+                                # Calculate stats DF for each strain/sample. These DFs are stored in the GrowthCurve objects
                                 get_strains_stats_df()
                               },
                               parse_time_in_hours_biotek = function(time_string){
                                 # Parse Time from Biotek-style results (strings in the form: "00:09:10")
+                                # Import as numeric reults in values from 0 to 1.0 where 1.0 is 24 hours
                                 return(time_string * 24)
                               },
                               parse_time_in_hours_infinite = function(time_string){
-                                # Parse Time from Biotek-style results (strings in the form: "00:09:10")
+                                # Parse Time from Infinite-style results (in seconds)
                                 return((time_string/60)/60)
                               },
                               substract_blank = function(nob_gc_df, blank_col = 1, str_plate_rows){
                                 blank_wells <- c()
-                                # Iterate over rows
+                                # Iterate over rows provided to generate the wells vector
                                 for (rowstr in str_plate_rows) {
                                   blank_wells <- c(blank_wells, paste(rowstr, blank_col, sep = ""))
                                 }
+                                # Select blank wells and calculate blank means
                                 blank_means <- rowMeans(dplyr::select(nob_gc_df, all_of(c(blank_wells))))
                                 
-                                # copy non blank DF
+                                # Copy non blank DF to avoid modifying the original one
                                 new_df <- nob_gc_df[,2:ncol(nob_gc_df)]
-                                print("Pre")
-                                print(head(nob_gc_df))
-                                # Now iterate over dataframe to substract blank value
+                                # Now iterate over dataframe to subtract blank value in each row
                                 if (length(blank_means == nrow(nob_gc_df))) {
                                   for (gc_row in 1:nrow(new_df)) {
                                     new_df[gc_row, ] <- new_df[gc_row, ] - blank_means[gc_row]
@@ -144,16 +152,14 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 }else{
                                     print("Gc and blank means length are not equal")
                                 }
+                                # Add the Time column to the blanked DF and make sure names are correct
                                 new_df <- cbind(nob_gc_df[, "Time"], new_df)
                                 colnames(new_df) <- c("Time", colnames(new_df[, 2:ncol(new_df)]))
-                                print("Post")
-                                print(head(new_df))
                                 return(new_df)
                               },
                               read.gc.file.biotek = function(gc_path, gc_range, n_plate_cols, n_plate_rows, btk_correction=TRUE){
-                                # Calculate the amount of samples 
+                                # Calculate the amount of samples (number of columns, each well is a sample belonging to a strain and a replicate)
                                 n_samples <- n_plate_cols * n_plate_rows
-                                print(n_samples)
                                 # Read excel file
                                 rd_gc_df <- readxl::read_excel(path = gc_path, sheet = "Plate 1 - Sheet1", range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
                                 # Parse time 
@@ -175,7 +181,6 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 .self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_biotek)
                                 .self$gc_df$Time <- as.numeric(.self$gc_df$Time)
                                 # Adjust with Plate Readers conversion factor (od = preader.od * 4.4131 - 0.3588)
-                                #print(head(.self$gc_df[, 2:ncol(.self$gc_df)]*4.4131 - 0.3588))
                                 if (spk_correction) {
                                   
                                 }
@@ -195,7 +200,6 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 rd_gc_df$Time <- lapply(rd_gc_df$Time, .self$parse_time_in_hours_infinite)
                                 rd_gc_df$Time <- as.numeric(rd_gc_df$Time)
                                 # Adjust with Plate Readers conversion factor (od = preader.od * 4.4131 - 0.3588)
-                                #print(head(.self$gc_df[, 2:ncol(.self$gc_df)]*4.4131 - 0.3588))
                                 if (inf_correction) {
                                   rd_gc_df <- cbind(rd_gc_df$Time, rd_gc_df[, 2:ncol(rd_gc_df)]*4.4131 - 0.3588)
                                   colnames(rd_gc_df) <- c("Time", colnames(rd_gc_df)[2:length(rd_gc_df)])
@@ -205,18 +209,15 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               calculate_growth_curve_models = function(growth.curve.points){
                                 # Based on https://rpubs.com/angelov/growthcurver.
                                 summG <- function(x) {growthcurver::SummarizeGrowth(growth.curve.points$Time,x)}
+                                # Get models
                                 models.all <- lapply(growth.curve.points[2:ncol(growth.curve.points)], summG)
-                                #print(models.all)
+                                # Create predicted values DF
                                 df.predicted <- data.frame(time = growth.curve.points$Time)
-                                
-                                #print(head(df.predicted.plate))
+                                # Iterate over all samples/species
                                 for (i in names(growth.curve.points[2:ncol(growth.curve.points)])) 
                                 {
-                                  #print("column:")
-                                  #print(i)
-                                  #print(is.null(models.all[[i]]$model))
-                                  
                                   df.predicted_val <- NA
+                                  # Use tryCatch to avoid halting scripts execution when models cannot be calculated
                                   tryCatch(
                                     {
                                       # Just to highlight: if you want to use more than one
@@ -224,8 +225,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                       # use curly brackets.
                                       # 'tryCatch()' will return the last evaluated expression
                                       # in case the "try" part was completed successfully
-                                      
-                                      message("This is the 'try' part")
+                                      #message("This is the 'try' part")
                                       
                                       #suppressWarnings(df.predicted[[i]] <- predict(models.all[[i]]$model))
                                       df.predicted_val <- predict(models.all[[i]]$model)
@@ -247,13 +247,14 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                       # If you want more than one expression to be executed, then you
                                       # need to wrap them in curly brackets ({...}); otherwise you could
                                       # just have written 'finally = <expression>' 
-                                      message("Some other message at the end")
+                                      #message("Some other message at the end")
                                       df.predicted[[i]] <- df.predicted_val
                                     }
                                   )
                                 }
+                                # Reassign names
                                 colnames(df.predicted) <- c("Time", colnames(df.predicted)[2:ncol(df.predicted)])
-                                
+                                # Return de DF with predicted values for all species/strains
                                 return(df.predicted)
                               },
                               get_strains_stats_df = function(){
@@ -273,41 +274,44 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 }
                               },
                               add_gco = function(gco_to_add){
+                                # Add strain/sample name to names list
                                 .self$strains_names <- c(.self$strains_names, gco_to_add[[1]]$name)
+                                # Add GrowthCurve object to list
                                 .self$growthCurveObjects <- c(.self$growthCurveObjects, gco_to_add)
+                                # Recalculate strains/samples stats
                                 get_strains_stats_df()
                               },
                               remove_gco = function(gco_to_remove_name){
+                                # Iterate over all GrowthCurves object in list 
                                 for (gco in 1:length(.self$growthCurveObjects)) {
-                                  #print(gco)
+                                  # If the name in gco from list corresponds to the one to be removed
                                   if (.self$growthCurveObjects[[gco]]$name == gco_to_remove_name) {
-                                    #print(.self$growthCurveObjects[[gco]]$name != gco_to_remove_name)
+                                    # When the Growth curve object in list with the name to remove is found, delete it
                                     .self$growthCurveObjects <- .self$growthCurveObjects[.self$strains_names != gco_to_remove_name]
-                                    break
+                                    break # exit loop
                                   }
                                 }
+                                # Also remove strain/species name from list
                                 .self$strains_names <- .self$strains_names[.self$strains_names != gco_to_remove_name]
-                                
+                                # Recalculate strains/samples stats
                                 get_strains_stats_df()
                               },
                               merge_experiments = function(gcexperiment){},
                               plot_curves = function(yScalemin = NULL, yScalemax = NULL, calculate_model = TRUE){
-                                #print(length(.self$strains_names[[1]]))
+                                # 
                                 od_g <- tidyr::gather(.self$od_means, key = "Species", value = "OD", 2:(length(.self$strains_names) + 1))
-                                #print(head(od_g))
+                                # 
                                 od_sds_g <- tidyr::gather(.self$od_sds, key = "Species", value = "SD", 2:(length(.self$strains_names) + 1))
-                                #print(head(od_sds_g))
+                                # 
                                 od_means_sds_preds <- cbind(od_g, od_sds_g$SD)
-                                #print(head(od_means_sds_preds))
-                                #print(summary(od_means_sds_preds))
-                                #print(sapply(od_means_sds_preds, mode))
+                                # 
                                 colnames(od_means_sds_preds) <- c("Time", "Species", "od", "sd")
                                 
                                 if (calculate_model) {
                                   #
                                   df.predicted.plate <- calculate_growth_curve_models(.self$od_means)
                                   
-                                  #print(head(df.predicted.plate))
+                                  # 
                                   
                                   pred_g <- tidyr::gather(df.predicted.plate, key = "Species", value = "pred.od", 2:(length(.self$strains_names) + 1))
                                   
@@ -344,4 +348,4 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               }
                             )
 )
-# To do: comments, prints, packages calls, multipanel graphs, 
+# To do: merge experiments, packages calls, multipanel graphs.
