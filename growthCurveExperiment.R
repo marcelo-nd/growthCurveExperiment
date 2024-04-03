@@ -72,26 +72,34 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                                                       blank = logical(), # if blank has to be substracted, TRUE
                                                                       blank_col = NULL, # What is the column of the blank
                                                                       pr_correction = TRUE, # should plate reader correction be applied use TRUE
-                                                                      psheet = "Plate 1 - Sheet1"
+                                                                      psheet = character()
                               ){
                                 .self$strains_names = strains_names
                                 # Decide which plate reader type generated the table file and use respective function
                                 if(plate_reader_type == "Biotek") {
+                                  if (length(psheet)==0) {
+                                    psheet = "Plate 1 - Sheet1"
+                                  }
                                   gc_df <- .self$read.gc.file.biotek(gc_path = gc_df_path, gc_range = gc_range,
                                                                            n_plate_cols = length(strains_plate_cols),
                                                                            n_plate_rows = length(strains_plate_rows),
-                                                                           btk_correction = pr_correction,
-                                                                           psheet = psheet)
+                                                                           btk_correction = pr_correction, psheet2 = psheet)
                                 }else if (plate_reader_type == "Spark"){
+                                  if (length(psheet)==0) {
+                                    psheet = "Tabelle2"
+                                  }
                                   gc_df <- .self$read.gc.file.spark(gc_path = gc_df_path, gc_range = gc_range,
                                                                           n_plate_cols = length(strains_plate_cols),
                                                                           n_plate_rows = length(strains_plate_rows),
-                                                                          spk_correction = pr_correction)
+                                                                          spk_correction = pr_correction, psheet2 = psheet)
                                 }else if (plate_reader_type == "Infinite"){
+                                  if (length(psheet)==0) {
+                                    psheet = "Sheet2"
+                                  }
                                   gc_df <- .self$read.gc.file.infinite(gc_path = gc_df_path, gc_range = gc_range,
-                                                                             n_plate_cols = length(strains_plate_cols),
-                                                                             n_plate_rows = length(strains_plate_rows),
-                                                                             inf_correction = pr_correction)
+                                                                          n_plate_cols = length(strains_plate_cols),
+                                                                          n_plate_rows = length(strains_plate_rows),
+                                                                          inf_correction = pr_correction, psheet2 = psheet)
                                 }else{
                                   print("Plate reader type does not exist")
                                 }
@@ -159,11 +167,11 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 colnames(new_df) <- c("Time", colnames(new_df[, 2:ncol(new_df)]))
                                 return(new_df)
                               },
-                              read.gc.file.biotek = function(gc_path, gc_range, n_plate_cols, n_plate_rows, btk_correction=TRUE, psheet = psheet){
+                              read.gc.file.biotek = function(gc_path, gc_range, n_plate_cols, n_plate_rows, btk_correction=TRUE, psheet2){
                                 # Calculate the amount of samples (number of columns, each well is a sample belonging to a strain and a replicate)
                                 n_samples <- n_plate_cols * n_plate_rows
                                 # Read excel file
-                                rd_gc_df <- readxl::read_excel(path = gc_path, sheet = psheet, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
+                                rd_gc_df <- readxl::read_excel(path = gc_path, sheet = psheet2, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
                                 # Parse time 
                                 rd_gc_df$Time <- lapply(rd_gc_df$Time, .self$parse_time_in_hours_biotek)
                                 rd_gc_df$Time <- as.numeric(rd_gc_df$Time)
@@ -174,11 +182,11 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 colnames(rd_gc_df) <- c("Time", colnames(rd_gc_df)[2:length(rd_gc_df)])
                                 return(rd_gc_df)
                               },
-                              read.gc.file.spark = function(gc_path, gc_range, n_plate_cols, n_plate_rows, spk_correction=TRUE){
+                              read.gc.file.spark = function(gc_path, gc_range, n_plate_cols, n_plate_rows, spk_correction=TRUE, psheet2){
                                 # Calculate the amount of samples 
                                 n_samples <- n_plate_cols * n_plate_rows
                                 # Read excel file
-                                .self$gc_df <- readxl::read_excel(path = gc_path, sheet = "Plate 1 - Sheet1", range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
+                                .self$gc_df <- readxl::read_excel(path = gc_path, sheet = psheet2, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
                                 # Parse time 
                                 .self$gc_df$Time <- lapply(gc_df$Time, .self$parse_time_in_hours_biotek)
                                 .self$gc_df$Time <- as.numeric(.self$gc_df$Time)
@@ -190,11 +198,11 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 colnames(.self$gc_df) <- c("Time", colnames(.self$gc_df)[2:length(.self$gc_df)])
                                 return(gc_df)
                               },
-                              read.gc.file.infinite = function(gc_path, gc_range, n_plate_cols, n_plate_rows, inf_correction=TRUE, p_sheet = "Sheet2"){
+                              read.gc.file.infinite = function(gc_path, gc_range, n_plate_cols, n_plate_rows, inf_correction=TRUE, psheet2){
                                 # Calculate the amount of samples 
                                 n_samples <- n_plate_cols * n_plate_rows
                                 # Read excel file
-                                rd_gc_df <- readxl::read_excel(path = gc_path, sheet = p_sheet, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples+1)))
+                                rd_gc_df <- readxl::read_excel(path = gc_path, sheet = psheet2, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples+1)))
                                 # Get rid of column with temperature values in Infinite PR result files
                                 rd_gc_df <- subset(rd_gc_df, select = -c(`Temp. [°C]`))
                                 colnames(rd_gc_df) <- c("Time", colnames(rd_gc_df)[2:length(rd_gc_df)])
