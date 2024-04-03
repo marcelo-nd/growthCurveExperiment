@@ -72,7 +72,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                                                       blank = logical(), # if blank has to be substracted, TRUE
                                                                       blank_col = NULL, # What is the column of the blank
                                                                       pr_correction = TRUE, # should plate reader correction be applied use TRUE
-                                                                      psheet = character()
+                                                                      psheet = "Plate 1 - Sheet1"
                               ){
                                 .self$strains_names = strains_names
                                 # Decide which plate reader type generated the table file and use respective function
