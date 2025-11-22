@@ -80,10 +80,19 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   if (length(psheet)==0) {
                                     psheet = "Plate 1 - Sheet1"
                                   }
-                                  gc_df <- .self$read.gc.file.biotek(gc_path = gc_df_path, gc_range = gc_range,
-                                                                           n_plate_cols = length(strains_plate_cols),
-                                                                           n_plate_rows = length(strains_plate_rows),
-                                                                           btk_correction = pr_correction, psheet2 = psheet)
+                                  if (blank == FALSE){
+                                    gc_df <- .self$read.gc.file.biotek(gc_path = gc_df_path, gc_range = gc_range,
+                                                                       n_plate_cols = length(strains_plate_cols),
+                                                                       n_plate_rows = length(strains_plate_rows),
+                                                                       btk_correction = pr_correction, psheet2 = psheet, blanked = TRUE)
+                                  }else{
+                                    gc_df <- .self$read.gc.file.biotek(gc_path = gc_df_path, gc_range = gc_range,
+                                                                       n_plate_cols = length(strains_plate_cols),
+                                                                       n_plate_rows = length(strains_plate_rows),
+                                                                       btk_correction = pr_correction, psheet2 = psheet, blanked = FALSE)
+                                  }
+                                  
+                                  
                                 }else if (plate_reader_type == "Spark"){
                                   if (length(psheet)==0) {
                                     psheet = "Tabelle2"
@@ -167,11 +176,21 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 colnames(new_df) <- c("Time", colnames(new_df[, 2:ncol(new_df)]))
                                 return(new_df)
                               },
-                              read.gc.file.biotek = function(gc_path, gc_range, n_plate_cols, n_plate_rows, btk_correction=TRUE, psheet2){
+                              read.gc.file.biotek = function(gc_path, gc_range, n_plate_cols, n_plate_rows, psheet2, btk_correction=TRUE, blanked = TRUE){
+                                print("Started Biotek reading file")
                                 # Calculate the amount of samples (number of columns, each well is a sample belonging to a strain and a replicate)
                                 n_samples <- n_plate_cols * n_plate_rows
+                                print(n_samples)
                                 # Read excel file
-                                rd_gc_df <- readxl::read_excel(path = gc_path, sheet = psheet2, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
+                                if (blanked) {
+                                  rd_gc_df <- readxl::read_excel(path = gc_path, sheet = psheet2, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
+                                }else{
+                                  rd_gc_df <- readxl::read_excel(path = gc_path, sheet = psheet2, range = gc_range, col_names = TRUE, col_types = c("numeric", "numeric", rep("numeric", n_samples)))
+                                  
+                                  rd_gc_df <- rd_gc_df[, -2]
+                                }
+                                
+                                print(head(rd_gc_df))
                                 # Parse time 
                                 rd_gc_df$Time <- lapply(rd_gc_df$Time, .self$parse_time_in_hours_biotek)
                                 rd_gc_df$Time <- as.numeric(rd_gc_df$Time)
@@ -180,6 +199,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   rd_gc_df <- cbind(rd_gc_df$Time, rd_gc_df[, 2:ncol(rd_gc_df)]*3.17 - 0.26)
                                 }
                                 colnames(rd_gc_df) <- c("Time", colnames(rd_gc_df)[2:length(rd_gc_df)])
+                                print("Finished reading Biotek file")
                                 return(rd_gc_df)
                               },
                               read.gc.file.spark = function(gc_path, gc_range, n_plate_cols, n_plate_rows, spk_correction=TRUE, psheet2){
@@ -268,11 +288,13 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 return(df.predicted)
                               },
                               get_strains_stats_df = function(){
+                                print("Getting stats for all GCO")
                                 # Empty dfs for means and sds, first column is "Time" variable.
                                 .self$od_means <- dplyr::select(.self$growthCurveObjects[[1]]$data, "Time")
                                 .self$od_sds <- dplyr::select(.self$growthCurveObjects[[1]]$data, "Time")
                                 for (gco in growthCurveObjects) {
                                   # Calculate the stats for each strain in GrowthCurve objects list
+                                  gco$calculate_stats()
                                   # and append to each stats df
                                   gco_means <- dplyr::select(gco$means, "mean")
                                   colnames(gco_means) <- gco$name
@@ -335,7 +357,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 if (!is.null(yScalemin) && !is.null(yScalemax)) {
                                   curves_plot <- od_means_sds_preds %>%
                                     ggplot(aes(x = Time, y = od, group = Species, color = Species)) +
-                                    geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
+                                    #geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
                                     geom_point(alpha=0.7) +
                                     scale_color_manual(values=color_scale) +
                                     ylim(yScalemin, yScalemax) +
@@ -343,7 +365,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 }else{
                                   curves_plot <- od_means_sds_preds %>%
                                     ggplot(aes(x = Time, y = od, group = Species, color = Species)) +
-                                    geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
+                                    #geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
                                     geom_point(alpha=0.7) +
                                     scale_color_manual(values=color_scale) +
                                     labs(y= "OD (600nm)", x = "Time (h)")
@@ -355,7 +377,24 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                     geom_line(aes(x = Time, y=pred.od), linewidth = 0.5)
                                 }
                                 return(curves_plot)
+                              },
+                              remove_replicate_in_gco = function(gco_name = NULL, reps_2_remove = NULL){
+                                print(reps_2_remove)
+                                if (is.null(gco_name) | is.null(reps_2_remove)) {
+                                  print("Missing arguments")
+                                  break
+                                }else{
+                                  new_gco_data <- .self$growthCurveObjects[.self$strains_names == gco_name][[1]]$data
+                                  #new_gco_data <- new_gco_data[, -(rep_2_remove + 1)]
+                                  new_gco_data <- new_gco_data[, !(names(new_gco_data) %in% reps_2_remove)]
+                                  .self$growthCurveObjects[.self$strains_names == gco_name][[1]]$data <- new_gco_data
+                                  
+                                  #.self$growthCurveObjects[.self$strains_names == gco_name][[1]]$data
+                                  
+                                  get_strains_stats_df()
+                                }
                               }
                             )
 )
+
 # To do: merge experiments, packages calls, multipanel graphs.
