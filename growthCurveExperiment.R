@@ -186,8 +186,9 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   rd_gc_df <- readxl::read_excel(path = gc_path, sheet = psheet2, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
                                 }else{
                                   rd_gc_df <- readxl::read_excel(path = gc_path, sheet = psheet2, range = gc_range, col_names = TRUE, col_types = c("numeric", "numeric", rep("numeric", n_samples)))
+                                  #rd_gc_df <- readxl::read_excel(path = gc_path, sheet = psheet2, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
                                   
-                                  rd_gc_df <- rd_gc_df[, -2]
+                                  #rd_gc_df <- rd_gc_df[, -2]
                                 }
                                 
                                 print(head(rd_gc_df))
