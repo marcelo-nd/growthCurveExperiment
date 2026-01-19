@@ -8,6 +8,9 @@ if (!require("ggplot2", quietly = TRUE))
 if (!require("dplyr", quietly = TRUE))
   install.packages("dplyr")
 
+if (!require("tidyr", quietly = TRUE))
+  install.packages("tidyr")
+
 if (!require("growthcurver", quietly = TRUE))
   install.packages("growthcurver")
 
@@ -63,85 +66,222 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                               # The most common way to populate a GrowthCurveExperiment object is from a table.
                               # In this kind of experiment rows are replicates and columns are species or samples.
                               # If blank is used it should be in one column as a sample
-                              create_gc_objects_from_table = function(gc_df_path, # path to table
-                                                                      gc_range = character(), # The range inside the excel file
-                                                                      plate_reader_type = character(), # One of the 3 types of plate readers
-                                                                      strains_names = c(), # The strains or samples names 
-                                                                      strains_plate_cols = list(), # the columns measured in the plate
-                                                                      strains_plate_rows = list(), # The rows measured in the plate
-                                                                      blank = logical(), # if blank has to be substracted, TRUE
-                                                                      blank_col = NULL, # What is the column of the blank
-                                                                      pr_correction = TRUE, # should plate reader correction be applied use TRUE
-                                                                      psheet = character()
-                              ){
-                                .self$strains_names = strains_names
-                                # Decide which plate reader type generated the table file and use respective function
-                                if(plate_reader_type == "Biotek") {
-                                  if (length(psheet)==0) {
-                                    psheet = "Plate 1 - Sheet1"
-                                  }
-                                  if (blank == FALSE){
-                                    gc_df <- .self$read.gc.file.biotek(gc_path = gc_df_path, gc_range = gc_range,
-                                                                       n_plate_cols = length(strains_plate_cols),
-                                                                       n_plate_rows = length(strains_plate_rows),
-                                                                       btk_correction = pr_correction, psheet2 = psheet, blanked = TRUE)
-                                  }else{
-                                    gc_df <- .self$read.gc.file.biotek(gc_path = gc_df_path, gc_range = gc_range,
-                                                                       n_plate_cols = length(strains_plate_cols),
-                                                                       n_plate_rows = length(strains_plate_rows),
-                                                                       btk_correction = pr_correction, psheet2 = psheet, blanked = FALSE)
-                                  }
-                                  
-                                  
-                                }else if (plate_reader_type == "Spark"){
-                                  if (length(psheet)==0) {
-                                    psheet = "Tabelle2"
-                                  }
-                                  gc_df <- .self$read.gc.file.spark(gc_path = gc_df_path, gc_range = gc_range,
-                                                                          n_plate_cols = length(strains_plate_cols),
-                                                                          n_plate_rows = length(strains_plate_rows),
-                                                                          spk_correction = pr_correction, psheet2 = psheet)
-                                }else if (plate_reader_type == "Infinite"){
-                                  if (length(psheet)==0) {
-                                    psheet = "Sheet2"
-                                  }
-                                  gc_df <- .self$read.gc.file.infinite(gc_path = gc_df_path, gc_range = gc_range,
-                                                                          n_plate_cols = length(strains_plate_cols),
-                                                                          n_plate_rows = length(strains_plate_rows),
-                                                                          inf_correction = pr_correction, psheet2 = psheet)
-                                }else{
-                                  print("Plate reader type does not exist")
-                                }
+                              create_gc_objects_from_table = function(gc_df_path,# path to excel file
+                                                                      gc_range = character(),     # range inside the excel file
+                                                                      strains_names = c(),        # sample/strain names (one per plate column group)
+                                                                      strains_plate_cols = list(),# plate columns used (e.g. "1".."12")
+                                                                      strains_plate_rows = list(),# plate rows used (e.g. "A".."H")
+                                                                      blank = logical(),          # subtract blank well mean? TRUE/FALSE
+                                                                      blank_col = NULL,           # which plate column is the blank (e.g. 12)
+                                                                      pr_correction = TRUE,       # keep for later (reader can use it)
+                                                                      psheet = character(),       # excel sheet name
+                                                                      time_format = c("excel_day_fraction")  # for now: only this format
+                                                                      ) {
                                 
-                                # Subtract blank measurements from blank column
-                                if (blank == TRUE && !is.null(blank_col)) {
-                                  # call the substract_blank function contained in the GrowthCUrveExperiment Class
-                                  gc_df_blnk <- substract_blank(gc_df, blank_col = blank_col, str_plate_rows = strains_plate_rows)
-                                }else{
-                                  # If no blank is going to be substracted just change the name pf the DF
+                                # --- Store names ---
+                                .self$strains_names <- strains_names
+                                
+                                # --- Defaults ---
+                                if (length(psheet) == 0) psheet <- 1  # allow "1" or first sheet
+                                time_format <- match.arg(time_format)
+                                
+                                # --- Read table using the new general reader (we'll build it next) ---
+                                gc_df <- .self$read.gc.file(
+                                  gc_path       = gc_df_path,
+                                  gc_range      = gc_range,
+                                  psheet2       = psheet,
+                                  n_plate_cols  = length(strains_plate_cols),
+                                  n_plate_rows  = length(strains_plate_rows),
+                                  time_format   = time_format,
+                                  pr_correction = pr_correction
+                                )
+                                
+                                print(head(gc_df))
+                                print(tail(gc_df))
+                                
+                                # --- Optional: subtract blank measurements (your existing method) ---
+                                if (isTRUE(blank) && !is.null(blank_col)) {
+                                  gc_df_blnk <- .self$substract_blank(
+                                    gc_df,
+                                    blank_col = blank_col,
+                                    str_plate_rows = strains_plate_rows
+                                  )
+                                } else {
                                   gc_df_blnk <- gc_df
                                 }
-                                
-                                # Now we create the GrowthCurve Objects from the data in the table file
-                                # The GrowthCurve objects are stored in a list in the GrowthCurveExperiment object
-                                # First we generate the wells list for each strain/sample
-                                bacteria_count = 1 # counter to keep track of the strain/sample number
-                                # Each column is a strain.
+
+                                # --- Build GrowthCurve objects ---
+                                .self$growthCurveObjects <- list()  # reset list each time
+
+                                bacteria_count <- 1
                                 for (colstr in strains_plate_cols) {
                                   strain_wells <- c()
                                   for (rowstr in strains_plate_rows) {
-                                   # Each strain has nrow number of replicates
                                     strain_wells <- c(strain_wells, paste(rowstr, colstr, sep = ""))
                                   }
-                                  # Generate and add the growth curve object to list
-                                  # The generated well names are used to select columns from GC DF for each strain (column)
-                                  # The name of the GrowthCurve object is taken from the list of strain provided so order of this list is important
-                                  # The selected data is used to generate a GrowthCurve object which is appended to the Growthcurve objects list
-                                  growthCurveObjects <<- append(growthCurveObjects, GrowthCurve$new(name=.self$strains_names[bacteria_count], data  = dplyr::select(gc_df_blnk, all_of(c("Time", strain_wells)))))
-                                  bacteria_count = bacteria_count + 1 # counter to keep track of the strain/sample number
+
+                                  .self$growthCurveObjects <- append(
+                                    .self$growthCurveObjects,
+                                    GrowthCurve$new(
+                                      name = .self$strains_names[bacteria_count],
+                                      data = dplyr::select(gc_df_blnk, all_of(c("Time", strain_wells)))
+                                    )
+                                  )
+
+                                  bacteria_count <- bacteria_count + 1
                                 }
-                                # Calculate stats DF for each strain/sample. These DFs are stored in the GrowthCurve objects
-                                get_strains_stats_df()
+
+                                # --- Calculate stats DF for each strain/sample ---
+                                .self$get_strains_stats_df()
+                              },
+                              read.gc.file = function(gc_path, gc_range, psheet2,
+                                                      n_plate_cols = NULL,
+                                                      n_plate_rows = NULL,
+                                                      time_format = c("excel_day_fraction"),
+                                                      pr_correction = TRUE,
+                                                      correction_fun = NULL,
+                                                      correction_a = 3.17,
+                                                      correction_b = -0.26,
+                                                      ignore_cols = NULL,
+                                                      verbose = FALSE
+                                                      ) {
+                                time_format <- match.arg(time_format)
+                                
+                                # ---- 1) Read excel range ----
+                                rd_raw <- readxl::read_excel(
+                                  path = gc_path,
+                                  sheet = psheet2,
+                                  range = gc_range,
+                                  col_names = TRUE
+                                )
+                                
+                                if (!is.null(ignore_cols)) {
+                                  rd_raw <- dplyr::select(rd_raw, -dplyr::any_of(ignore_cols))
+                                }
+                                
+                                # ---- 2) Identify Time column ----
+                                nms <- names(rd_raw)
+                                time_idx <- which(tolower(nms) == "time")
+                                if (length(time_idx) == 0) {
+                                  stop("Could not find a 'Time' column (case-insensitive). Check the header row in your selected range.")
+                                }
+                                if (length(time_idx) > 1) {
+                                  warning("More than one 'Time' column found; using the first one.")
+                                  time_idx <- time_idx[1]
+                                }
+                                time_col_name <- nms[time_idx]
+                                
+                                # ---- 3) Keep only well columns A1..H12 ----
+                                well_idx <- which(grepl("^[A-H](?:[1-9]|1[0-2])$", nms, perl = TRUE))
+                                if (length(well_idx) == 0) {
+                                  stop("No well columns detected. Expected names like A1..H12. Check whether your header row contains those well IDs.")
+                                }
+                                
+                                rd_gc_df <- dplyr::select(rd_raw, dplyr::all_of(c(time_col_name, nms[well_idx])))
+                                names(rd_gc_df)[1] <- "Time"
+                                
+                                # ---- 4) Optional sanity check ----
+                                if (!is.null(n_plate_cols) && !is.null(n_plate_rows)) {
+                                  expected_wells <- n_plate_cols * n_plate_rows
+                                  got_wells <- ncol(rd_gc_df) - 1
+                                  if (got_wells != expected_wells) {
+                                    warning(sprintf(
+                                      "Expected %d well columns (%d cols x %d rows) but detected %d. Continuing anyway.",
+                                      expected_wells, n_plate_cols, n_plate_rows, got_wells
+                                    ))
+                                  }
+                                }
+                                
+                                # ---- 5) Coerce well columns to numeric ----
+                                for (j in 2:ncol(rd_gc_df)) {
+                                  if (!is.numeric(rd_gc_df[[j]])) {
+                                    rd_gc_df[[j]] <- suppressWarnings(as.numeric(rd_gc_df[[j]]))
+                                  }
+                                }
+                                
+                                # ---- 6) Parse Time + UNWRAP across midnight (FIX) ----
+                                if (time_format == "excel_day_fraction") {
+                                  t <- rd_gc_df$Time
+                                  
+                                  # Helper: unwrap a vector of hours where time resets at midnight
+                                  unwrap_hours <- function(hours_vec) {
+                                    hours_vec <- as.numeric(hours_vec)
+                                    if (length(hours_vec) <= 1 || all(is.na(hours_vec))) return(hours_vec)
+                                    wrap <- c(FALSE, diff(hours_vec) < 0)   # TRUE when time goes backwards
+                                    hours_vec + cumsum(wrap) * 24
+                                  }
+                                  
+                                  # A) Character input (often "HH:MM:SS"; sometimes Excel shows "1:0:09:10" but readxl drops the day)
+                                  if (is.character(t)) {
+                                    parse_hms_like_to_hours <- function(x) {
+                                      parts <- strsplit(x, ":", fixed = TRUE)[[1]]
+                                      nums <- suppressWarnings(as.numeric(parts))
+                                      if (any(is.na(nums))) return(NA_real_)
+                                      
+                                      # Most robust approach here: interpret the LAST 3 fields as HH:MM:SS
+                                      # This handles both "23:59:10" and "1:0:09:10" (we treat it as 00:09:10,
+                                      # then the unwrapping step adds +24 based on the previous timepoint).
+                                      if (length(nums) >= 3) {
+                                        tail3 <- tail(nums, 3)
+                                        h <- tail3[1]; m <- tail3[2]; s <- tail3[3]
+                                        return(h + (m/60) + (s/3600))
+                                      } else {
+                                        return(NA_real_)
+                                      }
+                                    }
+                                    
+                                    hours <- as.numeric(vapply(t, parse_hms_like_to_hours, numeric(1)))
+                                    rd_gc_df$Time <- unwrap_hours(hours)
+                                    
+                                  } else if (inherits(t, c("POSIXct", "POSIXt"))) {
+                                    lt <- as.POSIXlt(t)
+                                    hours <- lt$hour + (lt$min / 60) + (lt$sec / 3600)
+                                    rd_gc_df$Time <- unwrap_hours(hours)
+                                    
+                                  } else if (inherits(t, "Date")) {
+                                    rd_gc_df$Time <- as.numeric(t - t[1]) * 24
+                                    
+                                  } else {
+                                    # B) Numeric input: could be Excel fraction-of-day (0..1) OR already hours
+                                    x <- suppressWarnings(as.numeric(t))
+                                    
+                                    if (!all(is.na(x))) {
+                                      if (max(x, na.rm = TRUE) <= 1.5) {
+                                        # day fractions -> hours within day, then unwrap across midnight
+                                        hours <- x * 24
+                                        rd_gc_df$Time <- unwrap_hours(hours)
+                                      } else {
+                                        # already hours; still unwrap in case it resets for some reason
+                                        rd_gc_df$Time <- unwrap_hours(x)
+                                      }
+                                    } else {
+                                      rd_gc_df$Time <- x
+                                    }
+                                  }
+                                }
+                                
+                                # ---- 7) Apply correction (optional) ----
+                                if (!isFALSE(pr_correction)) {
+                                  fun <- NULL
+                                  if (is.function(pr_correction)) {
+                                    fun <- pr_correction
+                                  } else if (is.function(correction_fun)) {
+                                    fun <- correction_fun
+                                  } else if (isTRUE(pr_correction)) {
+                                    fun <- function(x) x * correction_a + correction_b
+                                  }
+                                  
+                                  if (is.function(fun)) {
+                                    rd_gc_df[, 2:ncol(rd_gc_df)] <- as.data.frame(lapply(rd_gc_df[, 2:ncol(rd_gc_df)], fun))
+                                  }
+                                }
+                                
+                                if (verbose) {
+                                  print(utils::head(rd_gc_df))
+                                  print(summary(rd_gc_df$Time))
+                                }
+                                
+                                return(as.data.frame(rd_gc_df))
                               },
                               parse_time_in_hours_biotek = function(time_string){
                                 # Parse Time from Biotek-style results (strings in the form: "00:09:10")
@@ -188,7 +328,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   rd_gc_df <- readxl::read_excel(path = gc_path, sheet = psheet2, range = gc_range, col_names = TRUE, col_types = c("numeric", "numeric", rep("numeric", n_samples)))
                                   #rd_gc_df <- readxl::read_excel(path = gc_path, sheet = psheet2, range = gc_range, col_names = TRUE, col_types = c("numeric", rep("numeric", n_samples)))
                                   
-                                  #rd_gc_df <- rd_gc_df[, -2]
+                                  rd_gc_df <- rd_gc_df[, -2]
                                 }
                                 
                                 print(head(rd_gc_df))
@@ -358,7 +498,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 if (!is.null(yScalemin) && !is.null(yScalemax)) {
                                   curves_plot <- od_means_sds_preds %>%
                                     ggplot(aes(x = Time, y = od, group = Species, color = Species)) +
-                                    #geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
+                                    geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
                                     geom_point(alpha=0.7) +
                                     scale_color_manual(values=color_scale) +
                                     ylim(yScalemin, yScalemax) +
@@ -366,7 +506,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 }else{
                                   curves_plot <- od_means_sds_preds %>%
                                     ggplot(aes(x = Time, y = od, group = Species, color = Species)) +
-                                    #geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
+                                    geom_errorbar(aes(ymin = od - sd, ymax = od + sd), width= 0.1) +
                                     geom_point(alpha=0.7) +
                                     scale_color_manual(values=color_scale) +
                                     labs(y= "OD (600nm)", x = "Time (h)")
