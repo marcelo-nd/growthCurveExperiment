@@ -470,7 +470,7 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                 get_strains_stats_df()
                               },
                               merge_experiments = function(gcexperiment){},
-                              plot_curves = function(yScalemin = NULL, yScalemax = NULL, calculate_model = TRUE){
+                              plot_curves = function(yScalemin = NULL, yScalemax = NULL, calculate_model = FALSE){
                                 # 
                                 od_g <- tidyr::gather(.self$od_means, key = "Species", value = "OD", 2:(length(.self$strains_names) + 1))
                                 # 
@@ -534,6 +534,90 @@ GrowthCurveExperiment <- setRefClass("GrowthCurveExperiment",
                                   
                                   get_strains_stats_df()
                                 }
+                              },
+                              export_labeled_data = function(file_path = NULL) {
+                                # Start with the Time column from the first object
+                                if (length(.self$growthCurveObjects) == 0) {
+                                  stop("No growth curve objects found in this experiment.")
+                                }
+                                
+                                # Initialize the final table with the Time column
+                                final_df <- data.frame(Time = .self$growthCurveObjects[[1]]$data$Time)
+                                
+                                # Iterate through each GrowthCurve object
+                                for (gco in .self$growthCurveObjects) {
+                                  # Extract data excluding the Time column (which is always column 1)
+                                  sample_data <- gco$data[, -1, drop = FALSE]
+                                  
+                                  # Rename columns to: "SampleName_WellID" (e.g., S.aureus_A1)
+                                  # This ensures every replicate is uniquely identified while showing the sample name
+                                  colnames(sample_data) <- paste(gco$name, colnames(sample_data), sep = "_")
+                                  
+                                  # Bind to the main data frame
+                                  final_df <- cbind(final_df, sample_data)
+                                }
+                                
+                                # If a file path is provided, save it as a CSV
+                                if (!is.null(file_path)) {
+                                  write.csv(final_df, file = file_path, row.names = FALSE)
+                                  message(paste("Data successfully exported to:", file_path))
+                                }
+                                
+                                return(final_df)
+                              },
+                              import_table = function(data_table, 
+                                                                strains_names = c(), 
+                                                                replicates_per_strain = 3) {
+                                # 1. Store the strain names in the experiment object
+                                .self$strains_names <- strains_names
+                                
+                                # 2. Identify the Time column (case-insensitive)
+                                time_idx <- which(tolower(names(data_table)) == "time")
+                                if (length(time_idx) == 0) stop("No 'Time' column found in the table.")
+                                
+                                # Prepare a clean data frame with Time as the first column
+                                # and all other data columns following it
+                                clean_df <- data.frame(Time = data_table[[time_idx]])
+                                other_cols <- data_table[, -time_idx, drop = FALSE]
+                                clean_df <- cbind(clean_df, other_cols)
+                                
+                                # 3. Clear existing objects
+                                .self$growthCurveObjects <- list()
+                                
+                                # 4. Iterate through the table to create GrowthCurve objects
+                                # We skip the first column (Time) and jump by 'replicates_per_strain'
+                                current_col_start <- 2 
+                                
+                                for (i in seq_along(strains_names)) {
+                                  # Determine the range of columns for this specific strain
+                                  col_end <- current_col_start + replicates_per_strain - 1
+                                  
+                                  # Safety check: make sure we don't exceed table dimensions
+                                  if (col_end > ncol(clean_df)) {
+                                    warning(paste("Not enough columns for strain:", strains_names[i]))
+                                    break
+                                  }
+                                  
+                                  # Extract Time + Replicates for this strain
+                                  strain_data <- clean_df[, c(1, current_col_start:col_end)]
+                                  
+                                  # Create the GrowthCurve object
+                                  new_gco <- GrowthCurve$new(
+                                    name = strains_names[i],
+                                    data = strain_data
+                                  )
+                                  
+                                  # Add to our list
+                                  .self$growthCurveObjects[[i]] <- new_gco
+                                  
+                                  # Move the pointer to the next set of columns
+                                  current_col_start <- col_end + 1
+                                }
+                                
+                                # 5. Refresh the experiment-wide stats (means/SDs)
+                                .self$get_strains_stats_df()
+                                
+                                message(paste("Successfully imported", length(.self$growthCurveObjects), "strains."))
                               }
                             )
 )
